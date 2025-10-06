@@ -1,0 +1,639 @@
+---
+title: 📝 Assignment 2 — Anomaly Detection (Student TO DO Section)
+author: 'alex'
+format:
+  html:
+    theme: darkly
+---
+
+
+
+**Read this**
+- Do **not** add or remove Python libraries. Stick to the imports already present in this notebook. Changing libraries is an automatic **−100%**.
+- You may use **machine learning, statistics, or a hybrid** approach — but your method must generalize to **new, unseen datasets**.
+- Datasets: We have 10 time-series with **10 000 rows** each; anomalies: **10 segments per dataset**.
+ You can upload the zip to you Google drive and use the ID from Google drive url.
+- Scoring in class: we will run your detector on **novel datasets**. **#correct/10 × 100** is your percentage.
+- Over/under-fitting penalties may apply (**−50%**).
+
+# What you must do
+Implement your anomaly detector using any means (could it be Machine Learning or statistics or a combination of both to improve the accuracy of the model). Return the index ranges for the anomalies for example 2001-2010.  
+
+You can also add small EDA (plots/stats) in the **EDA cell** below to justify your approach.
+
+**Do not modify** existing data loading and the libraries.
+
+```{python}
+import pandas as pd
+import os
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+
+train_file_names = os.listdir("train/")
+train_file_names.sort()
+
+train_files = []
+for file in train_file_names:
+    train_files.append(pd.read_csv(f"train/{file}", sep=";"))
+
+test_file_names = os.listdir("test/")
+test_file_names.sort()
+
+test_files = []
+for file in test_file_names:
+    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
+
+test_files[0].head()
+```
+
+## Student EDA
+Use this cell to explore the signal (e.g., plot, summary stats).
+
+```{python}
+
+import plotnine as p9
+
+def plof_true_anomalies(file : pd.DataFrame):
+  
+  signal = file['Value1']
+  q1 = np.quantile(signal, 0.25)
+  q3 = np.quantile(signal, 0.75)
+  iqr = q3 - q1
+  upper = np.mean(signal) + 1.5 * iqr 
+  lower = np.mean(signal) - 1.5 * iqr
+
+  mask = (signal > upper) | (signal < lower)
+  true_mask = file['Labels'].astype(bool)
+
+  anomalies = np.where(mask)
+
+  plt.figure(figsize=(14,4))
+  plt.plot(signal,color='black',lw=1)
+  plt.axhline(upper, color='r',lw=3)
+  plt.axhline(lower, color='r',lw=3)
+
+
+  if true_mask.any():
+      plt.fill_between(np.arange(len(signal)), signal,
+                       where=true_mask, color='red', alpha=0.3,
+                       label='True Anomaly')
+  plt.show()
+
+def plot_distribution(file):
+  (
+    p9.ggplot(file, p9.aes(x='Value1'))+
+      p9.geom_density(alpha=0.6)+
+      p9.labs(
+        title=f'Distribution of Signal'
+      )
+  ).show()
+  
+for file in train_files:
+  plof_true_anomalies(file)
+
+for file in test_files:
+  plof_true_anomalies(file)
+
+for file in train_files:
+  plot_distribution(file)
+
+for file in test_files:
+  plot_distribution(file)
+
+train_agg = pd.DataFrame()
+for train in train_files:
+  train_agg = pd.concat([train_agg, train])
+test_agg = pd.DataFrame()
+for test in test_files:
+  test_agg = pd.concat([test_agg, test])
+train_agg
+
+plot_distribution(train_agg)
+plot_distribution(test_agg)
+
+```
+
+All of the train datasets are the same and follow a **Gaussian Mixture Distribution**
+which means that all of them are a combination of two Normal distributions:
+
+- Long-Trend (Normal)
+- Short-term fluctuations (Also Normal)
+
+These trends can be determined individually using **Fast Fourier Transforms** 
+from scipy to confirm both of the trends are actually distributed normally(as
+currently its assumed there both normally distributed) but meh.
+
+The test datasets are normally distributed meaning that normal z-scores and IQR
+methods can apply to detect outliers.
+
+Given the data is **univariate**, using complex machine learning models like 
+LOF and EllipticEnvelope seems like overkill as the patterns are easily 
+recognizable.
+
+
+# **The Model**
+
+```{python}
+import warnings
+import matplotlib.pyplot as plt
+import numpy as np
+from numba import njit
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.covariance import EllipticEnvelope
+
+
+warnings.filterwarnings(
+    "ignore",
+    message="Determinant has increased; this should not happen"
+)
+
+@njit
+def create_windows_numba(series, window_size):
+    n_windows = len(series) - window_size + 1
+    windows = np.empty((n_windows, window_size), dtype=np.float32)
+    for i in range(n_windows):
+        windows[i, :] = series[i : i + window_size]
+    return windows
+
+@njit
+def normalize_scores(scores):
+    mn = np.min(scores)
+    mx = np.max(scores)
+    return (scores - mn) / (mx - mn + 1e-8)
+
+
+class AnomalyDetectionModel:
+    def __init__(self, window_size=30, contamination=0.01):
+        self.window_size = window_size
+        self.offset = window_size // 2
+        self.contamination = contamination
+
+        self.scaler = StandardScaler()
+        self.models = {
+            'IsolationForest': IsolationForest(contamination=contamination, random_state=42),
+            'OneClassSVM': OneClassSVM(kernel='rbf', gamma='scale', nu=contamination),
+            'EllipticEnvelope': EllipticEnvelope(contamination=contamination,
+                                                 support_fraction=0.75,
+                                                 random_state=42),
+        }
+
+        self.use_lof = True
+        self.lof_model = LocalOutlierFactor(n_neighbors=20,
+                                            contamination=contamination,
+                                            novelty=True)
+        self.full_anomaly_mask = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray = None):
+        self.train_windows = self._create_windows(X)
+        self.scaled_train_windows = self.scaler.fit_transform(self.train_windows)
+        for model in self.models.values():
+            model.fit(self.scaled_train_windows)
+        if self.use_lof:
+            self.lof_model.fit(self.scaled_train_windows)
+
+    def predict(self, X: np.ndarray):
+
+        test_windows = self._create_windows(X)
+        scaled = self.scaler.transform(test_windows)
+
+
+        all_scores = []
+        for model in self.models.values():
+            if hasattr(model, "decision_function"):
+                s = model.decision_function(scaled)
+                all_scores.append(normalize_scores(s))
+            else:
+                preds = model.predict(scaled)
+                all_scores.append(np.where(preds == -1, 0.0, 1.0))
+
+        if self.use_lof:
+            lof_s = self.lof_model.decision_function(scaled)
+            all_scores.append(normalize_scores(lof_s))
+
+        avg_scores = np.mean(np.stack(all_scores, axis=0), axis=0)
+        thresh = np.percentile(avg_scores, self.contamination * 100)
+        mask = np.zeros(len(X), dtype=int)
+        mask[self.offset : self.offset + len(avg_scores)] = (avg_scores <= thresh).astype(int)
+        self.full_anomaly_mask = mask
+        idx = np.argmin(avg_scores)
+        return idx + self.offset
+    def _create_windows(self, series: np.ndarray):
+        return create_windows_numba(series, self.window_size)
+```
+
+## Explanation
+
+This pipeline works on the idea that:
+
+        1) it builds upon sliding windows
+        2) gathers normalised anomaly scores from each sub-model and uses them
+        3) averages the anomaly scores
+        4) computes a binary mask by thresholding at the 1st percentile so that it can compare outputs
+        5) stores self.full_anomaly_mask (same length as the placeholder value)
+        6) returns the single index of the lowest‐score window center which closes the loop on the sliding window idea
+
+
+## **STUDENT TODO — Implement your anomaly detector**
+Implement Machine Learning/ Statistical models or both. Use the test_files (test series) to train your models and list of anomaly index range for example Anomaly 1:   2001-2005
+Anomaly 2:   2010-2012
+
+
+**Constraints**
+
+- Keep it efficient; we will run this over 10 datasets and additional novel datasets in class.
+
+### An Ensemble Stats Model
+
+This model assumes the data is normally distributed(supported by EDA) and 
+consequently, it combines four outlier metrics which works with univariate data
+and classifies outliers based on all the results together.
+
+::: {.callout-note}
+These results look too good and I don't know why. I'm not sure if I made a mistake
+in the `determine_metrics()` cell.
+:::
+
+```{python}
+#| colab: {base_uri: https://localhost:8080/}
+# Implement your anomaly detector/ detectors. You can edit this or use your own
+import numpy as np
+
+class BasicStatsModel:
+  """
+  Ensemble stats outlier classifier using:
+  - IQR 
+  - Normal z_scores
+  - Mean Absolute Deviation
+  - Rolling Z_scores(given function)
+
+  No train, test split as no machine learning is involved
+  """
+
+  #TODO: Make class better. Currently all the classifiers are used with threshold
+  # hyperparameter tuning but the names suck and is not as flexible.
+  # Also does not follow the sklearn fit,transform,predict API.
+
+  def __init__(self, series : pd.DataFrame,w_smooth=51):
+    self.data = series['Value1'].to_numpy()
+    self.labels = series['Labels']
+    self.w_smooth = w_smooth
+
+  def _init_iqr(self):
+    self.Q1 = np.quantile(self.data, 0.25)
+    self.Q3 = np.quantile(self.data, 0.75)
+    self.IQR = self.Q3 - self.Q1
+
+    self.lower = np.mean(self.data) - 1.5 * self.IQR
+    self.upper = np.mean(self.data) + 1.5 * self.IQR
+
+
+  def _determine_z_scores(self):
+    self.z_scores = (self.data - np.mean(self.data)) / np.std(self.data)
+  
+  def _determine_mads(self):
+    """
+    Determines the mean absolute deviation scores for the data
+    """
+    abs_diff = np.abs(self.data - np.median(self.data))
+
+    self.mad = np.sum(abs_diff) / len(self.data)
+
+  def _determine_smooth_signal(self):
+    
+    k = np.ones(self.w_smooth) / self.w_smooth
+    self.smooth = np.convolve(self.data, k, mode='same') 
+    self.resid = self.data - self.smooth
+
+  def _determine_rolling_metrics(self,w=61):
+    kw = np.ones(w) / w
+    mu = np.convolve(self.resid, kw, mode='same')
+    mu2 = np.convolve(self.resid * self.resid, kw, mode='same')
+    var = np.maximum(mu2 - mu*mu, 1e-08)
+    sigma= np.sqrt(var)
+
+    self.z_weighted = np.abs((self.resid - mu) / (sigma + 1e-08))
+
+  
+  def determine_metrics(self, y_pred : np.ndarray) -> pd.DataFrame:
+
+    y_true = self.labels
+    TP = np.sum((y_true == 1) & (y_pred == 1))
+    TN = np.sum((y_true == 0) & (y_pred == 0))
+    FP = np.sum((y_true == 0) & (y_pred == 1))
+    FN = np.sum((y_true == 1) & (y_pred == 0))
+
+    # Metrics
+    accuracy = (TP + TN) / (TP + TN + FP + FN)
+    precision = TP / (TP + FP)
+    recall = TN / (TN + FN)
+    f1 = (2 * precision * recall) /(precision + recall)
+
+    metrics = pd.DataFrame({
+      'Metric' : [
+        round(accuracy*100,2),
+        round(precision*100,2),
+        round(recall*100,2),
+        round(f1*100,2),
+      ]
+    }, index=['Accuracy','Precision',"Recall","F1"])
+
+    return metrics
+        
+  def init_scorers(self):
+    
+    self._init_iqr()
+    self._determine_mads() 
+    self._determine_z_scores()
+    self._determine_smooth_signal()
+    self._determine_rolling_metrics()
+
+  def plot_true_anomalies(self):
+    
+    signal = self.data
+    q1 = np.quantile(signal, 0.25)
+    q3 = np.quantile(signal, 0.75)
+    iqr = q3 - q1
+    upper = np.mean(signal) + 1.5 * iqr 
+    lower = np.mean(signal) - 1.5 * iqr
+
+    iqr_mask = (signal > upper) | (signal < lower)
+    true_mask = self.labels.astype(bool)
+
+    anomalies = np.where(iqr_mask)
+
+    plt.figure(figsize=(14,4))
+    plt.plot(signal,color='black',lw=1)
+    plt.axhline(upper, color='r',lw=3)
+    plt.axhline(lower, color='r',lw=3)
+
+
+    if true_mask.any():
+        plt.fill_between(np.arange(len(signal)), signal,
+                         where=true_mask, color='red', alpha=0.3,
+                         label='True Anomaly')
+      
+    plt.show()
+
+  def plot_predicted(self, predictions):
+
+    signal = self.data
+
+    true_mask = self.labels.astype(bool)
+    pred_mask = predictions.astype(bool)
+
+    plt.figure(figsize=(14,4))
+    plt.plot(signal, color='black',lw=1)
+
+    if true_mask.any():
+        plt.fill_between(np.arange(len(signal)), signal,
+                         where=true_mask, color='red', alpha=0.3,
+                         label='True Anomaly')
+
+    if pred_mask.any():
+        plt.fill_between(np.arange(len(signal)), signal,
+                         where=true_mask, color='green', alpha=0.5,
+                         label='Predicted Anomaly')
+    plt.show()
+
+  def determine_outlier_groups(self,df : pd.DataFrame, col='outlier') -> list[tuple[int]]:
+
+    # StackOverflow magic -> splits dataframes into yes no regions
+    group_ids = df[col].ne(df[col].shift()).cumsum()
+
+    grouped = df.groupby(group_ids)
+
+    groups = []
+    for group_id, group in grouped:
+      if group[col].iloc[0] == False:
+        continue
+      if len(group) == 1: continue
+
+      indices = group.index.tolist()
+      groups.append((
+        indices[0],
+        indices[-1]
+      ))
+    return groups
+    
+
+    
+      
+  def determine_outliers(self, mad_threshold=2,
+                         normal_z_threshold=2,
+                         weighted_z_threshold=2):
+    """
+    returns outliers in [(start-end),...] format by using multiple metrics. This
+    is an ensemble of multiple outlier masks where at least 3 of the selected
+    metrics must agree for an index to be an outlier.
+
+    If only a single instance qualifies as an outlier, its dropped as we're looking
+    for anomalous periods, not instances.
+    """
+    
+    iqr_mask = (self.data > self.upper) | (self.data < self.lower)
+    mad_mask = np.abs((self.data -np.median(self.data))) > self.mad * mad_threshold
+    normal_z_mask = np.abs(self.z_scores) > normal_z_threshold
+    weighted_z_mask = np.abs(self.z_weighted) > weighted_z_threshold
+
+    df = pd.DataFrame({
+      'IQR' : iqr_mask,
+      "MAD" : mad_mask,
+      'Normal_z' : normal_z_mask,
+      'Weighted_z' : weighted_z_mask
+    })
+
+    # If at least three of the metrics says outlier => classified as outlier
+    df['outlier'] = df.sum(axis=1) >=3
+
+    print(df)
+
+    return self.determine_outlier_groups(df), df['outlier'], df
+
+good_preds = 0
+n = 0
+file_no = 0
+missed_preds = {}
+
+test = test_files[0]
+
+model = BasicStatsModel(test)
+model.init_scorers()
+_,_, df = model.determine_outliers()
+
+df.to_csv('test.csv')
+
+# for file in test_files:
+#   model = BasicStatsModel(file)
+#   model.init_scorers()
+#
+#   good_relative = 0
+#
+#   pred_indices, pred = model.determine_outliers()
+#
+#   actual_indices = model.determine_outlier_groups(file, 'Labels')
+#
+#   actual_starts = [idx[0] for idx in actual_indices]
+#   actual_ends = [idx[1] for idx in actual_indices]
+#
+#   bad_preds = []
+#   for  pred in pred_indices:
+#     is_start_correct = pred[0] in actual_starts
+#     is_end_correct = pred[1] in actual_ends
+#     accuracy_check = is_start_correct & is_end_correct
+#     print( ' Pred:',pred, 'Good Prediction:', accuracy_check)
+#
+#     if accuracy_check: 
+#       good_preds += 1
+#       good_relative += 1
+#     else:
+#       bad_preds.append((pred[0], pred[1]))
+#
+#
+#     n += 1
+#   print(f"\n-------------File {file_no}---------------\n")
+#   file_no += 1
+#   missed_preds[file_no] = bad_preds
+#
+#
+# print("Good Preds", round((good_preds / n)*100,2),"%")
+
+```
+
+```{python} 
+for n in range(1,10):
+
+  misses = missed_preds.get(n)
+  data = test_files[n]
+
+  plt.figure(figsize=(14,4))
+  plt.plot(data, label=f"Test {n}",color='black',lw=1)
+
+  # Fill vertical red regions for each [start, end] pair
+  for start, end in misses:
+      plt.axvspan(start, end, color='red', alpha=0.3)
+
+  plt.title(f"Test file {n}")
+  plt.show()
+  
+```
+
+```{python} 
+file_count = 0
+n_groups = 0
+cum_accuracy = 0
+for file in test_files:
+  model = BasicStatsModel(file)
+  model.init_scorers()
+  indices, pred= model.determine_outliers()
+  metrics = model.determine_metrics(pred)
+
+  print(f'===================FILE {file_count}===============\n')
+  print(metrics,'\n')
+  print('Number of outlier regions', len(indices))
+  print(indices)
+  model.plot_predicted(pred)
+  file_count += 1
+  n_groups += len(indices)
+  cum_accuracy += metrics.loc['Accuracy']
+
+print("Overall Accuracy", cum_accuracy / 10)
+print("Total Groups", n_groups)
+print("Groups accuracy", n_groups / 100)
+  
+```
+
+# **Evaluation**
+ The higher the accuracy the better.
+
+```{python}
+#| colab: {base_uri: https://localhost:8080/}
+correct = 0
+for train, test in zip(train_files, test_files):
+    model = AnomalyDetectionModel()
+
+    model.fit(train.Value1.to_numpy().flatten(), train.Labels.to_numpy().flatten())
+
+    prediction_index = model.predict(test.Value1.to_numpy().flatten())
+
+
+    if (test.loc[prediction_index, "Labels"] == 1):
+        correct += 1
+
+print(f"Total score: {correct}%")
+```
+
+```{python}
+# Use other various evaluation metrics applicable to your models.
+```
+
+#**Limitations**
+While the ensemble sliding-window model seems to be a good fir,it does have some downsides.
+
+##**Computational Cost**:
+Because the model creates overlapping windows and runs multiple anomaly detection algorithms on each window, it can be computationally intensive—especially for long time series or when using a small window size (which results in many windows).
+
+##**This means it will require increased memory usage**
+
+##**It also means longer runtime compared to a single-model approach**
+
+It may not be suitable for very large datasets or real-time applications unless optimized or run on powerful hardware and there are some constructive bial issues that still need to be tested.
+
+**_For faster experiments, we could use a larger window size, downsampling the data, or disabling one or more models in the ensemble, but for this we need testing_**
+
+
+# **Visualisation of the anomalies**  
+
+Reuse this code to visualize the anomalies.
+
+```{python}
+#| colab: {base_uri: https://localhost:8080/, height: 1000}
+def visualize_anomaly_detection(test_df, model, file_idx=None):
+    """
+    Visualizes:
+    - Signal (black)
+    - Ground truth anomalies (red)
+    - Predicted anomalies (green)
+    - Most anomalous index (blue dot)
+    """
+    series = test_df['Value1'].to_numpy()
+    true_mask = test_df['Labels'].to_numpy().astype(bool)
+    pred_mask = model.full_anomaly_mask.astype(bool)
+    most_anomalous = np.argmin(pred_mask) if pred_mask.any() else None
+    pred_index = model.predict(series)  # triggers .full_anomaly_mask
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(series, color='black', lw=1, label='Signal')
+
+    if pred_mask.any():
+        plt.fill_between(np.arange(len(series)), series,
+                         where=pred_mask, color='green', alpha=0.3,
+                         label='Predicted Anomaly')
+
+    if true_mask.any():
+        plt.fill_between(np.arange(len(series)), series,
+                         where=true_mask, color='red', alpha=0.3,
+                         label='True Anomaly')
+
+    if 0 <= pred_index < len(series):
+        plt.scatter(pred_index, series[pred_index], color='blue', s=50, label='Most Anomalous Point')
+
+    title = f"File {file_idx}" if file_idx is not None else "Anomaly Detection"
+    plt.title(title)
+    plt.xlabel("Time Step")
+    plt.ylabel("Value")
+    plt.legend(loc="upper right")
+    plt.tight_layout()
+    plt.show()
+
+
+# -- Loop over all files and visualize each --
+# for idx, (train, test) in enumerate(zip(train_files, test_files), 1):
+#     model = AnomalyDetectionModel(window_size=30, contamination=0.01)
+#     model.fit(train['Value1'].to_numpy(), train['Labels'].to_numpy())
+#     model.predict(test['Value1'].to_numpy())  # sets .full_anomaly_mask
+#     visualize_anomaly_detection(test, model, file_idx=idx)
+```
