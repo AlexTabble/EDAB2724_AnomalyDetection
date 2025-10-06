@@ -458,7 +458,7 @@ n = 0
 file_no = 0
 missed_preds = {}
 
-test = test_files[0]
+test = test_files[1]
 
 model = BasicStatsModel(test)
 model.init_scorers()
