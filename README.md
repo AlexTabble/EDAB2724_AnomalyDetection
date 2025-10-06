@@ -16,6 +16,7 @@ Copy and paste the file contents into a cell
 
 Make sure benchmarking.py file is in same directory as .ipynb/.qmd file
 
+```
 .
 ├── benchmarking.py
 ├── test
@@ -30,6 +31,8 @@ Make sure benchmarking.py file is in same directory as .ipynb/.qmd file
 │   ├── 09.csv
 │   └── 10.csv
 └── Z*score_model.qmd -> \_Same directory level as benchmarking.py*
+
+```
 
 ```{python}
 from benchmarking import Benchmarking
