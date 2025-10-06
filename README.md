@@ -34,7 +34,7 @@ Make sure benchmarking.py file is in same directory as .ipynb/.qmd file
 
 ```
 
-```{python}
+```python
 from benchmarking import Benchmarking
 
 metrics = Benchmarking.evaluate_model(y_true, y_pred)
