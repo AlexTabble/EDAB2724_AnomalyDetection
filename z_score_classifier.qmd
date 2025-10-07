@@ -21,16 +21,16 @@ test_file_names = os.listdir("test/")
 test_file_names.sort()
 
 test_files = []
-for file in test_file_names:
-    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
-
-  
 #for file in test_file_names:
-#    data = pd.read_csv(f"test/{file}", sep=";")
-#    data['Value1'] = detrend(data['Value1'])
-#    test_files.append(data)
+#    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
+
+for file in test_file_names:
+    data = pd.read_csv(f"test/{file}", sep=";")
+    data['Value1'] = detrend(data['Value1'])
+    test_files.append(data)
 
 ```
+
 
 The test data is **normally distributed** meaning normal outlier detection 
 techniques like `z scores` and `IQR` is applicable.
@@ -124,9 +124,11 @@ class StatsModel(BaseEstimator, ClassifierMixin):
   def score(self, X , y_true) -> float:
     y_pred = self.predict(X)
     
-    true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),show_printout=False)
-    pred_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),show_printout=False)
-    return Benchmarking._evaluate_groups(pred_groups, true_groups,show_printout=False)
+    #true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),show_printout=False)
+    #pred_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),show_printout=False)
+
+    return recall_score(y_true, y_pred)
+    #return Benchmarking._evaluate_groups(pred_groups, true_groups,show_printout=False)
     
 ```
 
@@ -209,6 +211,20 @@ benchmark_df = run_benchmark(StatsModel())
 create_benchmark_table(benchmark_df)
 ```
 
+### Base Benchmark with different grouping hyperparameters
+
+The grouping function used for anomalous regions has two hyperparameters:
+
+- **merge_tolerance**
+  - acceptable gap between predicted anomalous regions for when a merge is 
+    appropriate
+- **noise_tolerance**
+  - minimum length of an anomalous region(end - start) for it to be classified 
+    as an anomalous region
+
+
+
+
 The group accuracy is penalised if precision or recall is very high. Given each
 set has a recall of 100%, we can hyperparameter tune the model to maximize 
 recall to get these two metrics closer together.
@@ -224,8 +240,8 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from tqdm import tqdm
 
 param_grid = {
-    #"w_smooth": [31, 51, 71, 91, 111, 131, 151, 171],          
-    #"w": [41, 61, 81, 101, 121, 141, 161, 181],                
+    "w_smooth": [31, 51, 71, 91, 111, 131, 151, 171],          
+    "w": [41, 61, 81, 101, 121, 141, 161, 181],                
     "iqr_threshold": [1.5, 1.75, 2],                   
     "mad_threshold": [ 2.2, 2.465, 2.7, 3],                  
     "normal_z_threshold": [2.25, 2.5, 3],         
@@ -269,6 +285,49 @@ model.set_params(**best_params)
 
 ```{python} 
 benchmark_df = run_benchmark(model)
-
 create_benchmark_table(benchmark_df)
 ```
+
+```{python} 
+model = StatsModel(iqr_threshold=1.5,
+                   normal_z_threshold=3,
+                   rolling_z_threshold=3)
+create_benchmark_table(run_benchmark(model))
+
+X = test_files[1]['Value1']
+y = test_files[1]['Labels']
+
+model.fit(X)
+y_pred = model.predict()
+
+pred_groups = np.array(Benchmarking.create_anomaly_groups(pd.Series(y_pred)))
+true_groups = np.array(Benchmarking.create_anomaly_groups(y))
+
+print('Pred Groups\n',pred_groups)
+print('Actual Groups\n',true_groups)
+```
+
+```{python} 
+for file in test_files:
+  model = StatsModel(iqr_threshold=1.5,
+                     normal_z_threshold=3,
+                     rolling_z_threshold=3)
+  X = file['Value1']
+  y = file['Labels']
+  model.fit(X)
+  y_pred = model.predict()
+
+  pred_groups = Benchmarking.create_anomaly_groups(pd.Series(y))
+  true_groups = Benchmarking.create_anomaly_groups(y)
+
+
+  plt.figure(figsize=(14,4))
+  plt.plot(X, color='black',lw=1)
+  #for start,end in true_groups:
+  #  plt.axvspan(start, end, color='green',alpha=0.3)
+
+  for start,end in pred_groups:
+    plt.axvspan(start,end, color='red',alpha=0.5)
+  plt.show()
+```
+
