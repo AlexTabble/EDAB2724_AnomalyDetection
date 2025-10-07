@@ -18,7 +18,9 @@ class Benchmarking:
     @staticmethod
     def create_anomaly_groups(data : pd.DataFrame|pd.Series, col='outlier',
                               include_single_groups=False,
-                              show_printout=True) -> list[tuple[int]]:
+                              show_printout=True,
+                              merge_tolerance=5,
+                              noise_tolerance=3) -> list[tuple[int]]:
         """
         Creates list of tuples containing start and end indices of anomalous regions
         
@@ -28,6 +30,10 @@ class Benchmarking:
         - col (str): Needs to be specified if a dataframe 
         - include_single_groups (boolean): whether to include anomalous regions
                                             which has length of 1
+        - merge_tolerance (int) : threshold for gaps between anomalies and when
+                                    its appropriate to merge them.
+        - noise tolerance (int) : threshold for when groups are considered noise
+                                    and not truly anomalous regions
         ---
         Output
          [(start_1,end_1),...,(start_n,end_n)]
@@ -73,6 +79,29 @@ class Benchmarking:
                     indices[-1] + 1 # Last index is exclusive so increment by 1
                 )
             )
+
+        merged = []
+        start_prev,end_prev = groups[0][0], groups[0][1]
+        for idx, _ in enumerate(groups):
+            
+            if idx == 0: continue
+            
+            start_current = groups[idx][0]
+            end_current = groups[idx][1]
+            
+            if (start_current - end_prev) <= merge_tolerance:
+                end_prev = end_current
+            else:
+                merged.append((start_prev, end_prev))
+                start_prev = start_current
+                end_prev = end_current
+        merged.append((start_prev, end_prev))
+                
+        groups = merged
+        
+        groups = [group for group in groups if (group[1] - group[0]) > noise_tolerance] 
+            
+            
         if show_printout:
             print(f'{len(groups)} anomaly groups identified')
         return groups
