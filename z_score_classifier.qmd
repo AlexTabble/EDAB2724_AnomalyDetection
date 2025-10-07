@@ -1,0 +1,274 @@
+---
+title: 'Z Score Classifier'
+format:
+  html:
+    theme: darkly
+---
+
+## Preparing data and motivation
+
+```{python} 
+import pandas as pd
+import os
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+from great_tables import GT, md
+
+from scipy.signal import detrend
+
+test_file_names = os.listdir("test/")
+test_file_names.sort()
+
+test_files = []
+for file in test_file_names:
+    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
+
+  
+#for file in test_file_names:
+#    data = pd.read_csv(f"test/{file}", sep=";")
+#    data['Value1'] = detrend(data['Value1'])
+#    test_files.append(data)
+
+```
+
+The test data is **normally distributed** meaning normal outlier detection 
+techniques like `z scores` and `IQR` is applicable.
+
+### The Model
+
+```{python} 
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.metrics import recall_score
+
+class StatsModel(BaseEstimator, ClassifierMixin):
+  """
+  Ensemble stats outlier classifier using:
+  - IQR
+  - Normal z_scores
+  - Rolling z_scores
+  - Mean Absolute Deviation
+
+  No train,test splitting is involved
+  """
+  def __init__(self, w_smooth=51, w = 61,
+               iqr_threshold = 1.5,
+               mad_threshold = 2.465,
+               normal_z_threshold = 2,
+               rolling_z_threshold = 2,
+               metric_consensus =3):
+    
+
+    self.w = w
+    self.w_smooth = w_smooth
+    self.iqr_threshold = iqr_threshold
+    self.mad_threshold = mad_threshold
+    self.normal_z_threshold = normal_z_threshold
+    self.rolling_z_threshold = rolling_z_threshold
+    self.metric_consensus = metric_consensus
+
+  def _determine_IQR_mask(self, X : np.array) -> None:
+    Q1 = np.quantile(X, 0.25)
+    Q3 = np.quantile(X, 0.75)
+    IQR = Q3 - Q1
+
+    IQR_LB = np.mean(X) - self.iqr_threshold * IQR
+    IQR_UB = np.mean(X) + self.iqr_threshold * IQR
+
+    self.IQR_mask = (X > IQR_UB) | (X < IQR_LB)
+
+  def _determine_mad_mask(self, X : np.array) -> None:
+    MAD = np.sum(np.abs(X - np.mean(X)))  / len(X)
+    median_diff = np.abs(X - np.median(X))
+
+    self.MAD_mask = median_diff > MAD * self.mad_threshold
+
+  def _determine_normal_z_mask(self, X : np.array) -> None:
+    normal_z = np.abs((X - np.mean(X)) / np.std(X))
+    self.normal_z_mask = normal_z > self.normal_z_threshold
+
+  
+
+  def _determine_rolling_z_mask(self, X :np.array) -> None:
+    
+    k = np.ones(self.w_smooth) / self.w_smooth
+    smooth = np.convolve(X, k, mode='same') 
+    resid = X- smooth
+    kw = np.ones(self.w) / self.w
+    mu = np.convolve(resid, kw, mode='same')
+    mu2 = np.convolve(resid * resid, kw, mode='same')
+    var = np.maximum(mu2 - mu*mu, 1e-08)
+    sigma= np.sqrt(var)
+
+    z_rolling = np.abs((resid - mu) / (sigma + 1e-08))
+    self.z_rolling_mask = np.abs(z_rolling > self.rolling_z_threshold)
+
+  def fit(self, X : np.array, y=None) -> None:
+    self._determine_mad_mask(X)
+    self._determine_rolling_z_mask(X)
+    self._determine_normal_z_mask(X)
+    self._determine_IQR_mask(X)
+    return self
+    
+  def predict(self, X = None) -> np.array:
+    mask_df = pd.DataFrame({
+      'IQR' : self.IQR_mask,
+      "MAD" : self.MAD_mask,
+      'Normal_z' : self.normal_z_mask,
+      'Rolling_z' : self.z_rolling_mask
+    })
+
+    mask_df['outlier'] = mask_df.sum(axis=1) >= self.metric_consensus
+    return mask_df['outlier'].to_numpy()
+
+  def score(self, X , y_true) -> float:
+    y_pred = self.predict(X)
+    
+    true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),show_printout=False)
+    pred_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),show_printout=False)
+    return Benchmarking._evaluate_groups(pred_groups, true_groups,show_printout=False)
+    
+```
+
+## Helper Functions
+
+```{python} 
+from benchmarking import Benchmarking
+import time
+
+
+def run_benchmark(model):
+  benchmark_df = pd.DataFrame()
+  file_no = 1
+  for df in test_files:
+    print(f'\n=========================File {file_no}==========================\n')
+    model = model
+    X = df['Value1']
+    y_true = df['Labels']
+    model.fit(X)
+    y_pred = model.predict()
+    results = Benchmarking.evaluate_model(y_true, y_pred)
+    results = results.rename(columns={'Score' : f'File {file_no}'})
+    benchmark_df = pd.concat([benchmark_df, results],axis=1)                         
+    file_no += 1
+
+  return benchmark_df
+
+def create_benchmark_table(benchmark_df: pd.DataFrame) -> None:
+  
+  totals = benchmark_df.sum(axis=1) / 10
+  totals = totals.apply(lambda x: round(x,2))
+
+  totals = totals.to_frame().transpose()
+  totals['group'] = 'AGGREGATE'
+  benchmark_df = benchmark_df.transpose()
+  benchmark_df['group'] = 'File'
+  benchmark_df = pd.concat([benchmark_df, totals])
+
+  benchmark_df = benchmark_df.reset_index().rename(columns={'index': 'File'})
+  benchmark_df
+  (
+    GT(benchmark_df)
+    .tab_header(title=md('Benchmark Results: **Stats Model**'),
+                subtitle=md("results **before any hyperparameter tuning**"))
+    .tab_source_note(md('See benchmarks for how penalised group accuracy is calculated'))
+    .tab_stub(rowname_col='File',groupname_col='group')
+  ).show()
+
+```
+
+## Benchmarking Time complexity
+
+```{python} 
+
+start = time.perf_counter()
+ms = []
+for epoch in range(1,100):
+  start = time.perf_counter()
+  model = StatsModel()
+  run_benchmark(model)
+  end = time.perf_counter()
+  ms.append((end-start))
+end = time.perf_counter()
+print('Time for 100 epochs', end-start)
+
+plt.plot(ms)
+plt.title('Total execution time for 10 Files')
+plt.xlabel('Epoch')
+plt.ylabel('Execution Time(in seconds)')
+plt.show()
+```
+
+The execution time varies from 24 ms to 300 ms meaning we can tune this model
+for thousands of iterations to determine the optimal parameters
+
+## Base Benchmark
+
+```{python} 
+benchmark_df = run_benchmark(StatsModel())
+create_benchmark_table(benchmark_df)
+```
+
+The group accuracy is penalised if precision or recall is very high. Given each
+set has a recall of 100%, we can hyperparameter tune the model to maximize 
+recall to get these two metrics closer together.
+
+Given precision is 100% (no false positives) this indicates all true anomalies
+are deteced by the model. The problem is that there is false negatives in the 
+model indicating multiple false indications of anomalous regions. 
+
+### Hyperparameter Tuning for Penalised Group Accuracy
+
+```{python} 
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from tqdm import tqdm
+
+param_grid = {
+    #"w_smooth": [31, 51, 71, 91, 111, 131, 151, 171],          
+    #"w": [41, 61, 81, 101, 121, 141, 161, 181],                
+    "iqr_threshold": [1.5, 1.75, 2],                   
+    "mad_threshold": [ 2.2, 2.465, 2.7, 3],                  
+    "normal_z_threshold": [2.25, 2.5, 3],         
+    "rolling_z_threshold": [2.0, 2.25, 2.5],
+    "metric_consensus": [3, 4]                          
+}
+combined = pd.concat(test_files)
+
+def calculate_estimated_tuning_time(params: dict):
+  total_iterations = 1
+  for key, value in params.items():
+    total_iterations *= len(value)
+  print(total_iterations)
+  print('Estimated Tuning Time', (total_iterations / 16), 'seconds')
+
+calculate_estimated_tuning_time(param_grid)
+
+import itertools
+import numpy as np
+
+def grid_search(model, X, y, param_grid):
+    best_score = -np.inf
+    best_params = {}
+    for combination in tqdm(itertools.product(*param_grid.values()),desc='Iterations'):
+        params = dict(zip(param_grid.keys(), combination))
+        model.set_params(**params)
+        model.fit(X, y)
+        score = model.score(X, y)
+        if score > best_score:
+            best_score = score
+            best_params = params
+    return best_params, best_score
+```
+
+```{python} 
+best_params, best_score =grid_search(StatsModel(), combined['Value1'],combined['Labels'],param_grid)
+
+model = StatsModel()
+model.set_params(**best_params)
+```
+
+```{python} 
+benchmark_df = run_benchmark(model)
+
+create_benchmark_table(benchmark_df)
+```

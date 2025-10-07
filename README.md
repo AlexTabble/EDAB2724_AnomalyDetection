@@ -4,7 +4,9 @@
 
 ## Model Benchmarks
 
-Insert benchmarks or whatever here
+### Z Score Benchmark
+
+[z_bench](assets/z_score_bench.pnq)
 
 ### Benchmarking usage
 

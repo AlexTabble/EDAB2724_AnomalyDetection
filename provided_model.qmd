@@ -52,66 +52,6 @@ Use this cell to explore the signal (e.g., plot, summary stats).
 
 ```{python}
 
-import plotnine as p9
-
-def plof_true_anomalies(file : pd.DataFrame):
-  
-  signal = file['Value1']
-  q1 = np.quantile(signal, 0.25)
-  q3 = np.quantile(signal, 0.75)
-  iqr = q3 - q1
-  upper = np.mean(signal) + 1.5 * iqr 
-  lower = np.mean(signal) - 1.5 * iqr
-
-  mask = (signal > upper) | (signal < lower)
-  true_mask = file['Labels'].astype(bool)
-
-  anomalies = np.where(mask)
-
-  plt.figure(figsize=(14,4))
-  plt.plot(signal,color='black',lw=1)
-  plt.axhline(upper, color='r',lw=3)
-  plt.axhline(lower, color='r',lw=3)
-
-
-  if true_mask.any():
-      plt.fill_between(np.arange(len(signal)), signal,
-                       where=true_mask, color='red', alpha=0.3,
-                       label='True Anomaly')
-  plt.show()
-
-def plot_distribution(file):
-  (
-    p9.ggplot(file, p9.aes(x='Value1'))+
-      p9.geom_density(alpha=0.6)+
-      p9.labs(
-        title=f'Distribution of Signal'
-      )
-  ).show()
-  
-for file in train_files:
-  plof_true_anomalies(file)
-
-for file in test_files:
-  plof_true_anomalies(file)
-
-for file in train_files:
-  plot_distribution(file)
-
-for file in test_files:
-  plot_distribution(file)
-
-train_agg = pd.DataFrame()
-for train in train_files:
-  train_agg = pd.concat([train_agg, train])
-test_agg = pd.DataFrame()
-for test in test_files:
-  test_agg = pd.concat([test_agg, test])
-train_agg
-
-plot_distribution(train_agg)
-plot_distribution(test_agg)
-
 ```
 
 All of the train datasets are the same and follow a **Gaussian Mixture Distribution**
@@ -246,304 +186,33 @@ Anomaly 2:   2010-2012
 
 - Keep it efficient; we will run this over 10 datasets and additional novel datasets in class.
 
-### An Ensemble Stats Model
-
-This model assumes the data is normally distributed(supported by EDA) and 
-consequently, it combines four outlier metrics which works with univariate data
-and classifies outliers based on all the results together.
-
-::: {.callout-note}
-These results look too good and I don't know why. I'm not sure if I made a mistake
-in the `determine_metrics()` cell.
-:::
 
 ```{python}
-#| colab: {base_uri: https://localhost:8080/}
-# Implement your anomaly detector/ detectors. You can edit this or use your own
-import numpy as np
+from benchmarking import Benchmarking
 
-class BasicStatsModel:
-  """
-  Ensemble stats outlier classifier using:
-  - IQR 
-  - Normal z_scores
-  - Mean Absolute Deviation
-  - Rolling Z_scores(given function)
+train = pd.concat(test_files[:-2])
+test = pd.concat(test_files[:2])
 
-  No train, test split as no machine learning is involved
-  """
+model = AnomalyDetectionModel(window_size=100, contamination=0.001)
 
-  #TODO: Make class better. Currently all the classifiers are used with threshold
-  # hyperparameter tuning but the names suck and is not as flexible.
-  # Also does not follow the sklearn fit,transform,predict API.
+X_train = train['Value1'].to_numpy().flatten()
+y_train = train['Labels'].to_numpy().flatten()
 
-  def __init__(self, series : pd.DataFrame,w_smooth=51):
-    self.data = series['Value1'].to_numpy()
-    self.labels = series['Labels']
-    self.w_smooth = w_smooth
+X_test= test['Value1'].to_numpy().flatten()
+y_test= test['Labels'].to_numpy().flatten()
 
-  def _init_iqr(self):
-    self.Q1 = np.quantile(self.data, 0.25)
-    self.Q3 = np.quantile(self.data, 0.75)
-    self.IQR = self.Q3 - self.Q1
+model.use_lof = False
+model.fit(X_train, y_train)
 
-    self.lower = np.mean(self.data) - 1.5 * self.IQR
-    self.upper = np.mean(self.data) + 1.5 * self.IQR
+most_anomalous = model.predict(X_test)
+y_pred = model.full_anomaly_mask
 
-
-  def _determine_z_scores(self):
-    self.z_scores = (self.data - np.mean(self.data)) / np.std(self.data)
-  
-  def _determine_mads(self):
-    """
-    Determines the mean absolute deviation scores for the data
-    """
-    abs_diff = np.abs(self.data - np.median(self.data))
-
-    self.mad = np.sum(abs_diff) / len(self.data)
-
-  def _determine_smooth_signal(self):
-    
-    k = np.ones(self.w_smooth) / self.w_smooth
-    self.smooth = np.convolve(self.data, k, mode='same') 
-    self.resid = self.data - self.smooth
-
-  def _determine_rolling_metrics(self,w=61):
-    kw = np.ones(w) / w
-    mu = np.convolve(self.resid, kw, mode='same')
-    mu2 = np.convolve(self.resid * self.resid, kw, mode='same')
-    var = np.maximum(mu2 - mu*mu, 1e-08)
-    sigma= np.sqrt(var)
-
-    self.z_weighted = np.abs((self.resid - mu) / (sigma + 1e-08))
-
-  
-  def determine_metrics(self, y_pred : np.ndarray) -> pd.DataFrame:
-
-    y_true = self.labels
-    TP = np.sum((y_true == 1) & (y_pred == 1))
-    TN = np.sum((y_true == 0) & (y_pred == 0))
-    FP = np.sum((y_true == 0) & (y_pred == 1))
-    FN = np.sum((y_true == 1) & (y_pred == 0))
-
-    # Metrics
-    accuracy = (TP + TN) / (TP + TN + FP + FN)
-    precision = TP / (TP + FP)
-    recall = TN / (TN + FN)
-    f1 = (2 * precision * recall) /(precision + recall)
-
-    metrics = pd.DataFrame({
-      'Metric' : [
-        round(accuracy*100,2),
-        round(precision*100,2),
-        round(recall*100,2),
-        round(f1*100,2),
-      ]
-    }, index=['Accuracy','Precision',"Recall","F1"])
-
-    return metrics
-        
-  def init_scorers(self):
-    
-    self._init_iqr()
-    self._determine_mads() 
-    self._determine_z_scores()
-    self._determine_smooth_signal()
-    self._determine_rolling_metrics()
-
-  def plot_true_anomalies(self):
-    
-    signal = self.data
-    q1 = np.quantile(signal, 0.25)
-    q3 = np.quantile(signal, 0.75)
-    iqr = q3 - q1
-    upper = np.mean(signal) + 1.5 * iqr 
-    lower = np.mean(signal) - 1.5 * iqr
-
-    iqr_mask = (signal > upper) | (signal < lower)
-    true_mask = self.labels.astype(bool)
-
-    anomalies = np.where(iqr_mask)
-
-    plt.figure(figsize=(14,4))
-    plt.plot(signal,color='black',lw=1)
-    plt.axhline(upper, color='r',lw=3)
-    plt.axhline(lower, color='r',lw=3)
-
-
-    if true_mask.any():
-        plt.fill_between(np.arange(len(signal)), signal,
-                         where=true_mask, color='red', alpha=0.3,
-                         label='True Anomaly')
-      
-    plt.show()
-
-  def plot_predicted(self, predictions):
-
-    signal = self.data
-
-    true_mask = self.labels.astype(bool)
-    pred_mask = predictions.astype(bool)
-
-    plt.figure(figsize=(14,4))
-    plt.plot(signal, color='black',lw=1)
-
-    if true_mask.any():
-        plt.fill_between(np.arange(len(signal)), signal,
-                         where=true_mask, color='red', alpha=0.3,
-                         label='True Anomaly')
-
-    if pred_mask.any():
-        plt.fill_between(np.arange(len(signal)), signal,
-                         where=true_mask, color='green', alpha=0.5,
-                         label='Predicted Anomaly')
-    plt.show()
-
-  def determine_outlier_groups(self,df : pd.DataFrame, col='outlier') -> list[tuple[int]]:
-
-    # StackOverflow magic -> splits dataframes into yes no regions
-    group_ids = df[col].ne(df[col].shift()).cumsum()
-
-    grouped = df.groupby(group_ids)
-
-    groups = []
-    for group_id, group in grouped:
-      if group[col].iloc[0] == False:
-        continue
-      if len(group) == 1: continue
-
-      indices = group.index.tolist()
-      groups.append((
-        indices[0],
-        indices[-1]
-      ))
-    return groups
-    
-
-    
-      
-  def determine_outliers(self, mad_threshold=2,
-                         normal_z_threshold=2,
-                         weighted_z_threshold=2):
-    """
-    returns outliers in [(start-end),...] format by using multiple metrics. This
-    is an ensemble of multiple outlier masks where at least 3 of the selected
-    metrics must agree for an index to be an outlier.
-
-    If only a single instance qualifies as an outlier, its dropped as we're looking
-    for anomalous periods, not instances.
-    """
-    
-    iqr_mask = (self.data > self.upper) | (self.data < self.lower)
-    mad_mask = np.abs((self.data -np.median(self.data))) > self.mad * mad_threshold
-    normal_z_mask = np.abs(self.z_scores) > normal_z_threshold
-    weighted_z_mask = np.abs(self.z_weighted) > weighted_z_threshold
-
-    df = pd.DataFrame({
-      'IQR' : iqr_mask,
-      "MAD" : mad_mask,
-      'Normal_z' : normal_z_mask,
-      'Weighted_z' : weighted_z_mask
-    })
-
-    # If at least three of the metrics says outlier => classified as outlier
-    df['outlier'] = df.sum(axis=1) >=3
-
-    print(df)
-
-    return self.determine_outlier_groups(df), df['outlier'], df
-
-good_preds = 0
-n = 0
-file_no = 0
-missed_preds = {}
-
-test = test_files[1]
-
-model = BasicStatsModel(test)
-model.init_scorers()
-_,_, df = model.determine_outliers()
-
-df.to_csv('test.csv')
-
-# for file in test_files:
-#   model = BasicStatsModel(file)
-#   model.init_scorers()
-#
-#   good_relative = 0
-#
-#   pred_indices, pred = model.determine_outliers()
-#
-#   actual_indices = model.determine_outlier_groups(file, 'Labels')
-#
-#   actual_starts = [idx[0] for idx in actual_indices]
-#   actual_ends = [idx[1] for idx in actual_indices]
-#
-#   bad_preds = []
-#   for  pred in pred_indices:
-#     is_start_correct = pred[0] in actual_starts
-#     is_end_correct = pred[1] in actual_ends
-#     accuracy_check = is_start_correct & is_end_correct
-#     print( ' Pred:',pred, 'Good Prediction:', accuracy_check)
-#
-#     if accuracy_check: 
-#       good_preds += 1
-#       good_relative += 1
-#     else:
-#       bad_preds.append((pred[0], pred[1]))
-#
-#
-#     n += 1
-#   print(f"\n-------------File {file_no}---------------\n")
-#   file_no += 1
-#   missed_preds[file_no] = bad_preds
-#
-#
-# print("Good Preds", round((good_preds / n)*100,2),"%")
-
+Benchmarking.evaluate_model(y_test, y_pred)
 ```
 
-```{python} 
-for n in range(1,10):
-
-  misses = missed_preds.get(n)
-  data = test_files[n]
-
-  plt.figure(figsize=(14,4))
-  plt.plot(data, label=f"Test {n}",color='black',lw=1)
-
-  # Fill vertical red regions for each [start, end] pair
-  for start, end in misses:
-      plt.axvspan(start, end, color='red', alpha=0.3)
-
-  plt.title(f"Test file {n}")
-  plt.show()
-  
-```
 
 ```{python} 
-file_count = 0
-n_groups = 0
-cum_accuracy = 0
-for file in test_files:
-  model = BasicStatsModel(file)
-  model.init_scorers()
-  indices, pred= model.determine_outliers()
-  metrics = model.determine_metrics(pred)
 
-  print(f'===================FILE {file_count}===============\n')
-  print(metrics,'\n')
-  print('Number of outlier regions', len(indices))
-  print(indices)
-  model.plot_predicted(pred)
-  file_count += 1
-  n_groups += len(indices)
-  cum_accuracy += metrics.loc['Accuracy']
-
-print("Overall Accuracy", cum_accuracy / 10)
-print("Total Groups", n_groups)
-print("Groups accuracy", n_groups / 100)
-  
 ```
 
 # **Evaluation**

@@ -17,7 +17,8 @@ class Benchmarking:
 
     @staticmethod
     def create_anomaly_groups(data : pd.DataFrame|pd.Series, col='outlier',
-                              include_single_groups=False) -> list[tuple[int]]:
+                              include_single_groups=False,
+                              show_printout=True) -> list[tuple[int]]:
         """
         Creates list of tuples containing start and end indices of anomalous regions
         
@@ -72,7 +73,8 @@ class Benchmarking:
                     indices[-1] + 1 # Last index is exclusive so increment by 1
                 )
             )
-        print(f'{len(groups)} anomaly groups identified')
+        if show_printout:
+            print(f'{len(groups)} anomaly groups identified')
         return groups
 
     @staticmethod
@@ -113,10 +115,10 @@ class Benchmarking:
         predicted_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred))
         true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true))
 
-        print('predicted groups:', len(predicted_groups))
-        print('actual groups:', len(true_groups))
-
-        group_accuracy = Benchmarking._evaluate_groups(predicted_groups, true_groups)
+        group_accuracy = Benchmarking._evaluate_groups(predicted_groups, true_groups,
+                                                       group_penalty=False)
+        penalized_group_accuracy = Benchmarking._evaluate_groups(predicted_groups,
+                                                                 true_groups)
 
         metrics = pd.DataFrame({
             'Score' : [
@@ -124,22 +126,26 @@ class Benchmarking:
                 round(precision*100,2),
                 round(recall*100,2),
                 round(balanced_accuracy*100,2),
-                round(group_accuracy*100,2)
+                round(group_accuracy*100,2),
+                round(penalized_group_accuracy*100,2)
             ]
         }, index = ['Accuracy','Precision','Recall','Balanced Accuracy',
-                    'Group Accuracy'])
+                    'Group Accuracy','Penalised Group Accuracy'])
         return metrics
 
     @staticmethod
     def _evaluate_groups(predicted_groups : list[tuple[int]],
-                         true_groups : list[tuple[int]]) -> float:
+                         true_groups : list[tuple[int]],
+                         group_penalty : bool = True,
+                         show_printout :bool = True) -> float:
 
-        if len(predicted_groups) > 10:
-            print(f'Model predicts {len(predicted_groups) -10} more than 10')
-        elif len(predicted_groups) < 10:
-            print(f'Model predicts {10 - len(predicted_groups)} less than 10')
-        else:
-            print('Number of groups match!')
+        if show_printout:
+            if len(predicted_groups) > 10:
+                print(f'Model predicts {len(predicted_groups) -10} more than 10')
+            elif len(predicted_groups) < 10:
+                print(f'Model predicts {10 - len(predicted_groups)} less than 10')
+            else:
+                print('Number of groups match!')
                    
         actual_starts = [idx[0] for idx in true_groups]
         actual_ends = [idx[1] for idx in true_groups]
@@ -155,6 +161,20 @@ class Benchmarking:
                 bad_preds.append(pred)
 
         accuracy = valid_preds / len(true_groups)
+
+        # PERF: I'm not sure wether this is appropriate
+        # This is on the assumption that the unseen data also contains
+        # exactly 10 anomalies which means the model does not necessarly generalise
+        # to unseen data where the anomaly count is known.
+        # NOTE: I will ask whether this is appropriate
+        # For testing purposes, I'm including this but use it by keeping data leakage
+        # in mind
+        if group_penalty:
+            penalty = min(len(predicted_groups), len(true_groups)) / max(
+                len(predicted_groups), len(true_groups)
+            )
+            accuracy = accuracy * penalty
+        
         return accuracy
         
 
