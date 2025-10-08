@@ -40,6 +40,7 @@ techniques like `z scores` and `IQR` is applicable.
 ```{python} 
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import recall_score
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 class StatsModel(BaseEstimator, ClassifierMixin):
   """
@@ -58,7 +59,6 @@ class StatsModel(BaseEstimator, ClassifierMixin):
                rolling_z_threshold = 2,
                metric_consensus =3):
     
-
     self.w = w
     self.w_smooth = w_smooth
     self.iqr_threshold = iqr_threshold
@@ -67,29 +67,8 @@ class StatsModel(BaseEstimator, ClassifierMixin):
     self.rolling_z_threshold = rolling_z_threshold
     self.metric_consensus = metric_consensus
 
-  def _determine_IQR_mask(self, X : np.array) -> None:
-    Q1 = np.quantile(X, 0.25)
-    Q3 = np.quantile(X, 0.75)
-    IQR = Q3 - Q1
 
-    IQR_LB = np.mean(X) - self.iqr_threshold * IQR
-    IQR_UB = np.mean(X) + self.iqr_threshold * IQR
-
-    self.IQR_mask = (X > IQR_UB) | (X < IQR_LB)
-
-  def _determine_mad_mask(self, X : np.array) -> None:
-    MAD = np.sum(np.abs(X - np.mean(X)))  / len(X)
-    median_diff = np.abs(X - np.median(X))
-
-    self.MAD_mask = median_diff > MAD * self.mad_threshold
-
-  def _determine_normal_z_mask(self, X : np.array) -> None:
-    normal_z = np.abs((X - np.mean(X)) / np.std(X))
-    self.normal_z_mask = normal_z > self.normal_z_threshold
-
-  
-
-  def _determine_rolling_z_mask(self, X :np.array) -> None:
+  def _determine_rolling_z_mask(self, X :np.array) -> np.array:
     
     k = np.ones(self.w_smooth) / self.w_smooth
     smooth = np.convolve(X, k, mode='same') 
@@ -101,21 +80,31 @@ class StatsModel(BaseEstimator, ClassifierMixin):
     sigma= np.sqrt(var)
 
     z_rolling = np.abs((resid - mu) / (sigma + 1e-08))
-    self.z_rolling_mask = np.abs(z_rolling > self.rolling_z_threshold)
+    return np.abs(z_rolling > self.rolling_z_threshold)
 
   def fit(self, X : np.array, y=None) -> None:
-    self._determine_mad_mask(X)
-    self._determine_rolling_z_mask(X)
-    self._determine_normal_z_mask(X)
-    self._determine_IQR_mask(X)
+    self.iqr_ = np.quantile(X,0.75) - np.quantile(X,0.25)
+    self.mean_ = np.mean(X)
+    self.std_ = np.std(X)
+    self.median_ = np.median(X)
+    self.mad_ = np.sum(np.abs(X - self.mean_)) / len(X)
+
+    self.iqr_ub_ = self.mean_ + self.iqr_threshold * self.iqr_
+    self.iqr_lb_ = self.mean_ - self.iqr_threshold * self.iqr_ 
     return self
     
   def predict(self, X = None) -> np.array:
+    
+    IQR_mask = (X > self.iqr_ub_) | (X < self.iqr_lb_)
+    MAD_mask = np.abs(X - self.median_) > self.mad_ * self.mad_threshold
+    Normal_Z_Mask = np.abs((X - self.mean_) / self.std_) > self.normal_z_threshold
+    Rolling_Z_Mask = self._determine_rolling_z_mask(X)
+    
     mask_df = pd.DataFrame({
-      'IQR' : self.IQR_mask,
-      "MAD" : self.MAD_mask,
-      'Normal_z' : self.normal_z_mask,
-      'Rolling_z' : self.z_rolling_mask
+      'IQR' : IQR_mask,
+      "MAD" : MAD_mask,
+      'Normal_z' : Normal_Z_Mask,
+      'Rolling_z' : Rolling_Z_Mask 
     })
 
     mask_df['outlier'] = mask_df.sum(axis=1) >= self.metric_consensus
@@ -124,11 +113,7 @@ class StatsModel(BaseEstimator, ClassifierMixin):
   def score(self, X , y_true) -> float:
     y_pred = self.predict(X)
     
-    #true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),show_printout=False)
-    #pred_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),show_printout=False)
-
     return recall_score(y_true, y_pred)
-    #return Benchmarking._evaluate_groups(pred_groups, true_groups,show_printout=False)
     
 ```
 
@@ -148,7 +133,7 @@ def run_benchmark(model):
     X = df['Value1']
     y_true = df['Labels']
     model.fit(X)
-    y_pred = model.predict()
+    y_pred = model.predict(X)
     results = Benchmarking.evaluate_model(y_true, y_pred)
     results = results.rename(columns={'Score' : f'File {file_no}'})
     benchmark_df = pd.concat([benchmark_df, results],axis=1)                         
@@ -156,7 +141,9 @@ def run_benchmark(model):
 
   return benchmark_df
 
-def create_benchmark_table(benchmark_df: pd.DataFrame) -> None:
+def create_benchmark_table(benchmark_df: pd.DataFrame,
+                           model_name :str = "Stats Model" ,
+                           subtitle: str = "results **before hyperparameter turning**") -> None:
   
   totals = benchmark_df.sum(axis=1) / 10
   totals = totals.apply(lambda x: round(x,2))
@@ -171,7 +158,7 @@ def create_benchmark_table(benchmark_df: pd.DataFrame) -> None:
   benchmark_df
   (
     GT(benchmark_df)
-    .tab_header(title=md('Benchmark Results: **Stats Model**'),
+    .tab_header(title=md(f'Benchmark Results: **{model_name}**'),
                 subtitle=md("results **before any hyperparameter tuning**"))
     .tab_source_note(md('See benchmarks for how penalised group accuracy is calculated'))
     .tab_stub(rowname_col='File',groupname_col='group')
@@ -250,14 +237,14 @@ param_grid = {
 }
 combined = pd.concat(test_files)
 
-def calculate_estimated_tuning_time(params: dict):
+def calculate_estimated_tuning_time(params: dict, cv :int):
   total_iterations = 1
   for key, value in params.items():
     total_iterations *= len(value)
   print(total_iterations)
-  print('Estimated Tuning Time', (total_iterations / 16), 'seconds')
+  print('Estimated Tuning Time', (total_iterations / 16)*cv, 'seconds')
 
-calculate_estimated_tuning_time(param_grid)
+calculate_estimated_tuning_time(param_grid,5)
 
 import itertools
 import numpy as np
@@ -277,10 +264,14 @@ def grid_search(model, X, y, param_grid):
 ```
 
 ```{python} 
-best_params, best_score =grid_search(StatsModel(), combined['Value1'],combined['Labels'],param_grid)
-
-model = StatsModel()
-model.set_params(**best_params)
+import os
+grid = GridSearchCV(StatsModel(),
+                    param_grid=param_grid,
+                    cv=5,
+                    verbose=1,
+                    n_jobs=-1)
+grid.fit(combined['Value1'],combined["Labels"])
+os.system("ffplay ~/Music/notify.mp3")
 ```
 
 ```{python} 
@@ -298,7 +289,7 @@ X = test_files[1]['Value1']
 y = test_files[1]['Labels']
 
 model.fit(X)
-y_pred = model.predict()
+y_pred = model.predict(X)
 
 pred_groups = np.array(Benchmarking.create_anomaly_groups(pd.Series(y_pred)))
 true_groups = np.array(Benchmarking.create_anomaly_groups(y))

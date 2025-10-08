@@ -2,7 +2,7 @@
 
 ---
 
-## Model Benchmarks
+## Benchmark Documentation
 
 The most important function in the class is `create_anomaly_groups()`
 
@@ -155,3 +155,81 @@ metrics = Benchmarking.evaluate_model(y_true, y_pred)
 ```
 
 ---
+
+## Z-Score StatsModel Documentation
+
+The model classifies an anomaly based of the following metrics:
+
+> [!Note] Assumptions
+> Data is **Normally Distribted**.
+> Metrics are not appropriate for other distributions
+
+- Z-score
+- IQR
+- Rolling Z-score
+- Mean Absolute Deviation
+
+### Model API and Design
+
+If follows the scikit-learn API of `fit`, `predict`. Currently, I have not
+implemented it to predict on new data and it uses the provided training data
+to predict as it is purely statistical.
+
+I will modify the code to predict on new data using the thresholds from the
+training data and compute new classifier masks.
+
+## How it works
+
+#### `StatsModel`
+
+| Parameters            | Description                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| `w_smooth`            | Smoothing Factor for windows for rolling Z-scores (default=51)                         |
+| `w`                   | Smoothing Factor for residuals after convolution with windows(default=61)              |
+| `iqr_threshold`       | Factor multiplied with IQR which determines anomaly thresholds(default=1.5)            |
+| `normal_z_threshold`  | Z-score threshold for anomalies (default=2)                                            |
+| `rolling_z_threshold` | Rolling Z-score threshold for anomalies(default=2)                                     |
+| `metric_consensus`    | minimum required consensus for an observation to be classifed as an anomaly(default=3) |
+
+### Anomaly Masks
+
+#### `_determine_IQR_mask`
+
+Computes upper and lower IQR bounds and assigns `self.IQR_Mask` of the fit
+
+#### `_determine_mad_mask`
+
+Computes Mad and threshold and assigns `self.MAD_mask` of the fit
+
+#### `_determine_normal_z_mask`
+
+Computes z-scores and assigns `self.normal_z_mask` of the fit
+
+#### `_determine_rolling_z_mask`
+
+Computes the rolling z_scores and assigns `self.z_rolling_mask` of the fit
+
+### `fit`
+
+Assigns anomaly masks and returns self
+
+### `predict`
+
+returns outlier prediction column based on the `metric_consensus` hyperparameter
+
+## Required changes for train, test splitting compatibility
+
+Store the temporary variables like `IQR` and `MAD` for the fit data and use it
+to predict on the provided `y` variable for predict
+
+Compute the loss of the fit and the predict such that the loss function can be
+minimized.
+
+Also makes hyperparameter tuning with `GridSearchCV` possible as currently, only
+forced tuning can be done without cross validation
+
+> [!Note] Complexity
+> I'm learning how to use the sklearn API to do this so I don't have to make
+> everything from scratch. I'll do my best to optimize the loss function but
+> no promises on it working properly.
+> I will definitely be able to make it train test compatibile though.
