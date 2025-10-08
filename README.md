@@ -182,54 +182,77 @@ training data and compute new classifier masks.
 
 #### `StatsModel`
 
-| Parameters            | Description                                                                            |
-| --------------------- | -------------------------------------------------------------------------------------- |
-| `w_smooth`            | Smoothing Factor for windows for rolling Z-scores (default=51)                         |
-| `w`                   | Smoothing Factor for residuals after convolution with windows(default=61)              |
-| `iqr_threshold`       | Factor multiplied with IQR which determines anomaly thresholds(default=1.5)            |
-| `normal_z_threshold`  | Z-score threshold for anomalies (default=2)                                            |
-| `rolling_z_threshold` | Rolling Z-score threshold for anomalies(default=2)                                     |
-| `metric_consensus`    | minimum required consensus for an observation to be classifed as an anomaly(default=3) |
+An ensemble Anomaly classifier using traditional statistics like:
 
-### Anomaly Masks
+- IQR
+- Z-score
+- Rolling Z-score
+- MAD
 
-#### `_determine_IQR_mask`
-
-Computes upper and lower IQR bounds and assigns `self.IQR_Mask` of the fit
-
-#### `_determine_mad_mask`
-
-Computes Mad and threshold and assigns `self.MAD_mask` of the fit
-
-#### `_determine_normal_z_mask`
-
-Computes z-scores and assigns `self.normal_z_mask` of the fit
+| Parameter             | Default Value | Type    | Description                                                                                          |
+| --------------------- | ------------- | ------- | ---------------------------------------------------------------------------------------------------- |
+| `w_smooth`            | `51`          | `int`   | Window size for smoothing the input signal before computing residuals in the rolling Z-score method. |
+| `w`                   | `61`          | `int`   | Window size for computing rolling mean and variance of residuals in rolling Z-score detection.       |
+| `iqr_threshold`       | `1.5`         | `float` | Threshold multiplier for detecting outliers based on Interquartile Range (IQR).                      |
+| `mad_threshold`       | `2.465`       | `float` | Threshold multiplier for detecting outliers using Mean Absolute Deviation (MAD).                     |
+| `normal_z_threshold`  | `2`           | `float` | Z-score cutoff for normal distribution–based outlier detection.                                      |
+| `rolling_z_threshold` | `2`           | `float` | Z-score cutoff for rolling window–based outlier detection.                                           |
+| `metric_consensus`    | `3`           | `int`   | Number of metrics that must agree for a point to be labeled an outlier.                              |
 
 #### `_determine_rolling_z_mask`
 
-Computes the rolling z_scores and assigns `self.z_rolling_mask` of the fit
+Takes the prediction data and computes the rolling z scores. This does not work
+great when storing the metrics in the test fit as the convolution depends on the
+actual data as well
 
-### `fit`
+| Parameter | Default Value | Type       | Description                                                              |
+| --------- | ------------- | ---------- | ------------------------------------------------------------------------ |
+| `X`       | —             | `np.array` | Input 1D numerical array (time series) to calculate rolling Z-scores on. |
 
-Assigns anomaly masks and returns self
+#### `fit`
 
-### `predict`
+The normal sklearn API being adhered to. Note that the y parameter is passed but
+not used during training. This is because the sklearn API requires it to be
+passed for other wrappers like `GridSearchCV` to work.
 
-returns outlier prediction column based on the `metric_consensus` hyperparameter
+Fun fact: it also returns self which is important as that's what allows tuning
+algos to actually fit over and over again.
 
-## Required changes for train, test splitting compatibility
+| Parameter | Default Value | Type         | Description                                             |
+| --------- | ------------- | ------------ | ------------------------------------------------------- |
+| `X`       | —             | `np.array`   | Input numerical array used to compute model statistics. |
+| `y`       | `None`        | `array-like` | Optional labels (unused, for sklearn compatibility).    |
 
-Store the temporary variables like `IQR` and `MAD` for the fit data and use it
-to predict on the provided `y` variable for predict
+#### `predict`
 
-Compute the loss of the fit and the predict such that the loss function can be
-minimized.
+The test set is passed here which returns the predictions as an array.
+`_determine_rolling_z_mask` is also called here but not in fit due to the limitation
+as mentioned above.
 
-Also makes hyperparameter tuning with `GridSearchCV` possible as currently, only
-forced tuning can be done without cross validation
+| Parameter | Default Value | Type       | Description                        |
+| --------- | ------------- | ---------- | ---------------------------------- |
+| `X`       | `None`        | `np.array` | Input numerical array to classify. |
 
-> [!Note] Complexity
-> I'm learning how to use the sklearn API to do this so I don't have to make
-> everything from scratch. I'll do my best to optimize the loss function but
-> no promises on it working properly.
-> I will definitely be able to make it train test compatibile though.
+#### `score`
+
+Also a requirement in the sklearn API. The current scorer is recall. If hyperparameter
+tuning for different scores, just change the `scorer` parameter in the tuning
+algorithm to what you want.
+
+| Parameter | Default Value | Type       | Description                                                                    |
+| --------- | ------------- | ---------- | ------------------------------------------------------------------------------ |
+| `X`       | —             | `np.array` | Input numerical array for prediction.                                          |
+| `y_true`  | —             | `np.array` | True binary labels indicating whether each point is an outlier (1) or not (0). |
+
+**Example usage**
+
+```python
+
+model = StatsModel()
+model.fit(X_train)
+y_pred = model.predict(X_test)
+
+from benchmarking import Benchmarking
+
+Benchmarking.evaluate_model(y_true, y_pred)
+```

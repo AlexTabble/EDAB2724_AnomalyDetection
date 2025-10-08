@@ -107,7 +107,7 @@ class Benchmarking:
         return groups
 
     @staticmethod
-    def evaluate_model(y_true : np.array, y_pred : np.array) -> pd.DataFrame:
+    def evaluate_model(y_true : np.array, y_pred : np.array,show_printout=True) -> pd.DataFrame:
         """
         Returns a DataFrame which contains the metrics for the model
 
@@ -141,13 +141,17 @@ class Benchmarking:
         recall = recall_score(y_true, y_pred)
         balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
 
-        predicted_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred))
-        true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true))
+        predicted_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),
+                                                              show_printout=show_printout)
+        true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),
+                                                         show_printout=show_printout)
 
         group_accuracy = Benchmarking._evaluate_groups(predicted_groups, true_groups,
-                                                       group_penalty=False)
+                                                       group_penalty=False,
+                                                       show_printout=show_printout)
         penalized_group_accuracy = Benchmarking._evaluate_groups(predicted_groups,
-                                                                 true_groups)
+                                                                 true_groups,
+                                                                 show_printout=show_printout)
 
         metrics = pd.DataFrame({
             'Score' : [
