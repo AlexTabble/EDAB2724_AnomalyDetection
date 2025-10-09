@@ -85,6 +85,9 @@ from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.covariance import EllipticEnvelope
 
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.metrics import recall_score
+
 
 warnings.filterwarnings(
     "ignore",
@@ -106,7 +109,9 @@ def normalize_scores(scores):
     return (scores - mn) / (mx - mn + 1e-8)
 
 
-class AnomalyDetectionModel:
+# To make the class tunable, I had to add the base interfaces that allows it to
+# wrap around the API
+class AnomalyDetectionModel(BaseEstimator, ClassifierMixin):
     def __init__(self, window_size=30, contamination=0.01):
         self.window_size = window_size
         self.offset = window_size // 2
@@ -135,8 +140,9 @@ class AnomalyDetectionModel:
         if self.use_lof:
             self.lof_model.fit(self.scaled_train_windows)
 
-    def predict(self, X: np.ndarray):
+        return self
 
+    def predict(self, X: np.ndarray):
         test_windows = self._create_windows(X)
         scaled = self.scaler.transform(test_windows)
 
@@ -163,6 +169,18 @@ class AnomalyDetectionModel:
         return idx + self.offset
     def _create_windows(self, series: np.ndarray):
         return create_windows_numba(series, self.window_size)
+
+    def score(self, X : np.ndarray, y_true : np.ndarray):
+        most_anomalous = self.predict(X)       
+
+        # This model does not return the predictions for anomalies but instead
+        # returns the most anomalous observation
+        # It does store anomaly mask which is actually the predictions which
+        # is being passed to the scorer as the y_pred parameter enabling tuning
+
+        return recall_score(y_true, self.full_anomaly_mask)
+
+  
 ```
 
 ## Explanation
@@ -193,7 +211,7 @@ from benchmarking import Benchmarking
 train = pd.concat(test_files[:-2])
 test = pd.concat(test_files[:2])
 
-model = AnomalyDetectionModel(window_size=100, contamination=0.001)
+model = AnomalyDetectionModel()
 
 X_train = train['Value1'].to_numpy().flatten()
 y_train = train['Labels'].to_numpy().flatten()
@@ -212,6 +230,19 @@ Benchmarking.evaluate_model(y_test, y_pred)
 
 
 ```{python} 
+from sklearn.model_selection import GridSearchCV
+
+params = {
+  'window_size' : [31],
+  'contamination' : [0.01]
+}
+
+grid = GridSearchCV(
+  estimator=AnomalyDetectionModel(),
+  param_grid=params,
+  cv=3,
+  verbose=2
+)
 
 ```
 
