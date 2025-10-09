@@ -1,0 +1,308 @@
+---
+title: 📝 Assignment 2 — Anomaly Detection (Student TO DO Section)
+author: 'alex'
+format:
+  html:
+    theme: darkly
+---
+
+
+
+**Read this**
+- Do **not** add or remove Python libraries. Stick to the imports already present in this notebook. Changing libraries is an automatic **−100%**.
+- You may use **machine learning, statistics, or a hybrid** approach — but your method must generalize to **new, unseen datasets**.
+- Datasets: We have 10 time-series with **10 000 rows** each; anomalies: **10 segments per dataset**.
+ You can upload the zip to you Google drive and use the ID from Google drive url.
+- Scoring in class: we will run your detector on **novel datasets**. **#correct/10 × 100** is your percentage.
+- Over/under-fitting penalties may apply (**−50%**).
+
+# What you must do
+Implement your anomaly detector using any means (could it be Machine Learning or statistics or a combination of both to improve the accuracy of the model). Return the index ranges for the anomalies for example 2001-2010.  
+
+You can also add small EDA (plots/stats) in the **EDA cell** below to justify your approach.
+
+**Do not modify** existing data loading and the libraries.
+
+```{python}
+import pandas as pd
+import os
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+
+train_file_names = os.listdir("train/")
+train_file_names.sort()
+
+train_files = []
+for file in train_file_names:
+    train_files.append(pd.read_csv(f"train/{file}", sep=";"))
+
+test_file_names = os.listdir("test/")
+test_file_names.sort()
+
+test_files = []
+for file in test_file_names:
+    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
+
+test_files[0].head()
+```
+
+## Student EDA
+Use this cell to explore the signal (e.g., plot, summary stats).
+
+```{python}
+
+```
+
+All of the train datasets are the same and follow a **Gaussian Mixture Distribution**
+which means that all of them are a combination of two Normal distributions:
+
+- Long-Trend (Normal)
+- Short-term fluctuations (Also Normal)
+
+These trends can be determined individually using **Fast Fourier Transforms** 
+from scipy to confirm both of the trends are actually distributed normally(as
+currently its assumed there both normally distributed) but meh.
+
+The test datasets are normally distributed meaning that normal z-scores and IQR
+methods can apply to detect outliers.
+
+Given the data is **univariate**, using complex machine learning models like 
+LOF and EllipticEnvelope seems like overkill as the patterns are easily 
+recognizable.
+
+
+# **The Model**
+
+```{python}
+import warnings
+import matplotlib.pyplot as plt
+import numpy as np
+from numba import njit
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.covariance import EllipticEnvelope
+
+
+warnings.filterwarnings(
+    "ignore",
+    message="Determinant has increased; this should not happen"
+)
+
+@njit
+def create_windows_numba(series, window_size):
+    n_windows = len(series) - window_size + 1
+    windows = np.empty((n_windows, window_size), dtype=np.float32)
+    for i in range(n_windows):
+        windows[i, :] = series[i : i + window_size]
+    return windows
+
+@njit
+def normalize_scores(scores):
+    mn = np.min(scores)
+    mx = np.max(scores)
+    return (scores - mn) / (mx - mn + 1e-8)
+
+
+class AnomalyDetectionModel:
+    def __init__(self, window_size=30, contamination=0.01):
+        self.window_size = window_size
+        self.offset = window_size // 2
+        self.contamination = contamination
+
+        self.scaler = StandardScaler()
+        self.models = {
+            'IsolationForest': IsolationForest(contamination=contamination, random_state=42),
+            'OneClassSVM': OneClassSVM(kernel='rbf', gamma='scale', nu=contamination),
+            'EllipticEnvelope': EllipticEnvelope(contamination=contamination,
+                                                 support_fraction=0.75,
+                                                 random_state=42),
+        }
+
+        self.use_lof = True
+        self.lof_model = LocalOutlierFactor(n_neighbors=20,
+                                            contamination=contamination,
+                                            novelty=True)
+        self.full_anomaly_mask = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray = None):
+        self.train_windows = self._create_windows(X)
+        self.scaled_train_windows = self.scaler.fit_transform(self.train_windows)
+        for model in self.models.values():
+            model.fit(self.scaled_train_windows)
+        if self.use_lof:
+            self.lof_model.fit(self.scaled_train_windows)
+
+    def predict(self, X: np.ndarray):
+
+        test_windows = self._create_windows(X)
+        scaled = self.scaler.transform(test_windows)
+
+
+        all_scores = []
+        for model in self.models.values():
+            if hasattr(model, "decision_function"):
+                s = model.decision_function(scaled)
+                all_scores.append(normalize_scores(s))
+            else:
+                preds = model.predict(scaled)
+                all_scores.append(np.where(preds == -1, 0.0, 1.0))
+
+        if self.use_lof:
+            lof_s = self.lof_model.decision_function(scaled)
+            all_scores.append(normalize_scores(lof_s))
+
+        avg_scores = np.mean(np.stack(all_scores, axis=0), axis=0)
+        thresh = np.percentile(avg_scores, self.contamination * 100)
+        mask = np.zeros(len(X), dtype=int)
+        mask[self.offset : self.offset + len(avg_scores)] = (avg_scores <= thresh).astype(int)
+        self.full_anomaly_mask = mask
+        idx = np.argmin(avg_scores)
+        return idx + self.offset
+    def _create_windows(self, series: np.ndarray):
+        return create_windows_numba(series, self.window_size)
+```
+
+## Explanation
+
+This pipeline works on the idea that:
+
+        1) it builds upon sliding windows
+        2) gathers normalised anomaly scores from each sub-model and uses them
+        3) averages the anomaly scores
+        4) computes a binary mask by thresholding at the 1st percentile so that it can compare outputs
+        5) stores self.full_anomaly_mask (same length as the placeholder value)
+        6) returns the single index of the lowest‐score window center which closes the loop on the sliding window idea
+
+
+## **STUDENT TODO — Implement your anomaly detector**
+Implement Machine Learning/ Statistical models or both. Use the test_files (test series) to train your models and list of anomaly index range for example Anomaly 1:   2001-2005
+Anomaly 2:   2010-2012
+
+
+**Constraints**
+
+- Keep it efficient; we will run this over 10 datasets and additional novel datasets in class.
+
+
+```{python}
+from benchmarking import Benchmarking
+
+train = pd.concat(test_files[:-2])
+test = pd.concat(test_files[:2])
+
+model = AnomalyDetectionModel(window_size=100, contamination=0.001)
+
+X_train = train['Value1'].to_numpy().flatten()
+y_train = train['Labels'].to_numpy().flatten()
+
+X_test= test['Value1'].to_numpy().flatten()
+y_test= test['Labels'].to_numpy().flatten()
+
+model.use_lof = False
+model.fit(X_train, y_train)
+
+most_anomalous = model.predict(X_test)
+y_pred = model.full_anomaly_mask
+
+Benchmarking.evaluate_model(y_test, y_pred)
+```
+
+
+```{python} 
+
+```
+
+# **Evaluation**
+ The higher the accuracy the better.
+
+```{python}
+#| colab: {base_uri: https://localhost:8080/}
+correct = 0
+for train, test in zip(train_files, test_files):
+    model = AnomalyDetectionModel()
+
+    model.fit(train.Value1.to_numpy().flatten(), train.Labels.to_numpy().flatten())
+
+    prediction_index = model.predict(test.Value1.to_numpy().flatten())
+
+
+    if (test.loc[prediction_index, "Labels"] == 1):
+        correct += 1
+
+print(f"Total score: {correct}%")
+```
+
+```{python}
+# Use other various evaluation metrics applicable to your models.
+```
+
+#**Limitations**
+While the ensemble sliding-window model seems to be a good fir,it does have some downsides.
+
+##**Computational Cost**:
+Because the model creates overlapping windows and runs multiple anomaly detection algorithms on each window, it can be computationally intensive—especially for long time series or when using a small window size (which results in many windows).
+
+##**This means it will require increased memory usage**
+
+##**It also means longer runtime compared to a single-model approach**
+
+It may not be suitable for very large datasets or real-time applications unless optimized or run on powerful hardware and there are some constructive bial issues that still need to be tested.
+
+**_For faster experiments, we could use a larger window size, downsampling the data, or disabling one or more models in the ensemble, but for this we need testing_**
+
+
+# **Visualisation of the anomalies**  
+
+Reuse this code to visualize the anomalies.
+
+```{python}
+#| colab: {base_uri: https://localhost:8080/, height: 1000}
+def visualize_anomaly_detection(test_df, model, file_idx=None):
+    """
+    Visualizes:
+    - Signal (black)
+    - Ground truth anomalies (red)
+    - Predicted anomalies (green)
+    - Most anomalous index (blue dot)
+    """
+    series = test_df['Value1'].to_numpy()
+    true_mask = test_df['Labels'].to_numpy().astype(bool)
+    pred_mask = model.full_anomaly_mask.astype(bool)
+    most_anomalous = np.argmin(pred_mask) if pred_mask.any() else None
+    pred_index = model.predict(series)  # triggers .full_anomaly_mask
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(series, color='black', lw=1, label='Signal')
+
+    if pred_mask.any():
+        plt.fill_between(np.arange(len(series)), series,
+                         where=pred_mask, color='green', alpha=0.3,
+                         label='Predicted Anomaly')
+
+    if true_mask.any():
+        plt.fill_between(np.arange(len(series)), series,
+                         where=true_mask, color='red', alpha=0.3,
+                         label='True Anomaly')
+
+    if 0 <= pred_index < len(series):
+        plt.scatter(pred_index, series[pred_index], color='blue', s=50, label='Most Anomalous Point')
+
+    title = f"File {file_idx}" if file_idx is not None else "Anomaly Detection"
+    plt.title(title)
+    plt.xlabel("Time Step")
+    plt.ylabel("Value")
+    plt.legend(loc="upper right")
+    plt.tight_layout()
+    plt.show()
+
+
+# -- Loop over all files and visualize each --
+# for idx, (train, test) in enumerate(zip(train_files, test_files), 1):
+#     model = AnomalyDetectionModel(window_size=30, contamination=0.01)
+#     model.fit(train['Value1'].to_numpy(), train['Labels'].to_numpy())
+#     model.predict(test['Value1'].to_numpy())  # sets .full_anomaly_mask
+#     visualize_anomaly_detection(test, model, file_idx=idx)
+```
