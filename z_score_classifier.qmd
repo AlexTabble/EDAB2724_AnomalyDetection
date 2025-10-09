@@ -1,7 +1,7 @@
 ---
 title: 'Z Score Classifier'
 format:
-  pdf:
+  html:
     theme: darkly
 ---
 
@@ -361,3 +361,46 @@ for file in test_files:
   plt.show()
 ```
 
+```{python} 
+from sklearn.model_selection import LearningCurveDisplay
+
+LearningCurveDisplay.from_estimator(
+  StatsModel().set_params(**best_balanced_acc_params),
+  combined['Value1'],
+  combined['Labels']
+)
+plt.show()
+```
+
+```{python} 
+LearningCurveDisplay.from_estimator(
+  StatsModel().set_params(**best_recall_params),
+  combined['Value1'],
+  combined['Labels']
+)
+plt.show()
+```
+
+```{python} 
+from sklearn.metrics import roc_curve
+from sklearn.metrics import RocCurveDisplay
+
+model = StatsModel().set_params(**best_balanced_acc_params)
+
+Test = combined[-20000:]
+model.fit(combined[:80000]['Value1'])
+y_pred = model.predict(Test['Value1'])
+y_true = Test["Labels"]
+fpr, tpr, thresholds = roc_curve(y_true, y_pred)
+
+RocCurveDisplay.from_predictions(y_true, y_pred)
+plt.show()
+
+```
+
+```{python} 
+from sklearn.metrics import PrecisionRecallDisplay
+
+PrecisionRecallDisplay.from_predictions(y_true, y_pred)
+plt.show()
+```
