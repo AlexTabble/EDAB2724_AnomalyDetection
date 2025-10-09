@@ -3,6 +3,7 @@ title: 'Z Score Classifier'
 format:
   html:
     theme: darkly
+output-dir : docs
 ---
 
 ## Preparing data and motivation
@@ -32,6 +33,11 @@ for file in test_file_names:
     data['Value1'] = detrend(data['Value1'])
     test_files.append(data)
 
+
+train_file_names = os.listdir('train/')
+train_files = []
+for train in train_file_names:
+  train_files.append(pd.read_csv(f'train/{file}',sep=';'))
 ```
 
 
@@ -403,4 +409,19 @@ from sklearn.metrics import PrecisionRecallDisplay
 
 PrecisionRecallDisplay.from_predictions(y_true, y_pred)
 plt.show()
+```
+
+
+```{python} 
+model = StatsModel()
+
+for idx, train in enumerate(train_files):
+  model = StatsModel()
+  model.fit(train['Value1'])
+  y_pred = model.predict(test_files[idx]['Value1'])
+
+  y_true= test_files[idx]['Labels']
+  results = Benchmarking.evaluate_model(y_true, y_pred)
+  print(results)
+  
 ```
