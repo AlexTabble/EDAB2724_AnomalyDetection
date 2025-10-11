@@ -2,6 +2,7 @@
   {
     "listing": "/index.html",
     "items": [
+      "/posts/benchmarking/index.html",
       "/posts/z_score_model/index.html",
       "/posts/EDA/index.html",
       "/posts/isolation_forest/index.html",
