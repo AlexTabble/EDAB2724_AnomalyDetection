@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>About – Models</title>
+<title>ReadMe – Models</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -23,22 +23,23 @@ ul.task-list li input[type="checkbox"] {
 </style>
 
 
-<script src="site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="site_libs/quarto-nav/headroom.min.js"></script>
-<script src="site_libs/clipboard/clipboard.min.js"></script>
-<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="site_libs/quarto-search/fuse.min.js"></script>
-<script src="site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="./">
-<script src="site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="site_libs/quarto-html/popper.min.js"></script>
-<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
-<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-37eea08aefeeee20ff55810ff984fec1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-650962646ede98a6f0d577bcd0196704.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../../">
+<script src="../../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../../site_libs/quarto-html/popper.min.js"></script>
+<script src="../../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../../site_libs/quarto-html/quarto-syntax-highlighting-37eea08aefeeee20ff55810ff984fec1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../../site_libs/bootstrap/bootstrap-650962646ede98a6f0d577bcd0196704.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -67,18 +68,47 @@ ul.task-list li input[type="checkbox"] {
   }
 }</script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
-<link rel="stylesheet" href="styles.css">
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../../styles.css">
 </head>
 
 <body class="nav-fixed fullcontent quarto-light">
 
 <div id="quarto-search-results"></div>
-  <header id="quarto-header" class="headroom fixed-top">
+  <header id="quarto-header" class="headroom fixed-top quarto-banner">
     <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
-    <a class="navbar-brand" href="./index.html">
+    <a class="navbar-brand" href="../../index.html">
     <span class="navbar-title">Models</span>
     </a>
   </div>
@@ -89,7 +119,7 @@ ul.task-list li input[type="checkbox"] {
           <div class="collapse navbar-collapse" id="navbarCollapse">
             <ul class="navbar-nav navbar-nav-scroll ms-auto">
   <li class="nav-item">
-    <a class="nav-link active" href="./about.html" aria-current="page"> 
+    <a class="nav-link" href="../../about.html"> 
 <span class="menu-text">About</span></a>
   </li>  
   <li class="nav-item compact">
@@ -110,44 +140,127 @@ ul.task-list li input[type="checkbox"] {
     </nav>
 </header>
 <!-- content -->
-<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<header id="title-block-header" class="quarto-title-block default page-columns page-full">
+  <div class="quarto-title-banner page-columns page-full">
+    <div class="quarto-title column-body">
+      <h1 class="title">ReadMe</h1>
+                      </div>
+  </div>
+    
+  
+  <div class="quarto-title-meta">
+
+      
+    
+      
+    </div>
+    
+  
+  </header><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
 <!-- margin-sidebar -->
     
 <!-- main -->
-<div class="quarto-about-jolla">
-  <img src="profile.jpg" class="about-image
-  round " style="height: 15em; width: 15em;">
- <header id="title-block-header" class="quarto-title-block default">
-<div class="quarto-title">
-<h1 class="title">About</h1>
-</div>
-<div class="quarto-title-meta">
-  </div>
-</header><main class="content" id="quarto-document-content">
-<p>About this blog</p>
+<main class="content quarto-banner-title-block" id="quarto-document-content">
 
 
-</main> 
-  <hr class="about-sep">
-   <div class="about-links">
-  <a href="https://twitter.com" class="about-link" rel="" target="">
-    <i class="bi bi-twitter"></i>
-     <span class="about-link-text">Twitter</span>
-  </a>
-  <a href="https://linkedin.com" class="about-link" rel="" target="">
-    <i class="bi bi-linkedin"></i>
-     <span class="about-link-text">LinkedIn</span>
-  </a>
-  <a href="https://github.com" class="about-link" rel="" target="">
-    <i class="bi bi-github"></i>
-     <span class="about-link-text">Github</span>
-  </a>
+
+
+
+<section id="workflow" class="level2">
+<h2 class="anchored" data-anchor-id="workflow">Workflow</h2>
+<p>Model development and EDA was done in separate notebooks which consists of:</p>
+<ul>
+<li>Z-score classifier</li>
+<li>Isolation Forest classifier</li>
+<li>Provided Model</li>
+</ul>
+<p>A benchmarking class was created to evaluate model performance on the 10 test files for the z-score model.</p>
+</section>
+<section id="breakdown-of-each-model" class="level2">
+<h2 class="anchored" data-anchor-id="breakdown-of-each-model">Breakdown of each model</h2>
+<section id="z-score-classifier" class="level3">
+<h3 class="anchored" data-anchor-id="z-score-classifier">Z-score classifier</h3>
+<section id="preprocessing" class="level4">
+<h4 class="anchored" data-anchor-id="preprocessing">Preprocessing</h4>
+<p>Included using <code>scipy.signal.detrend</code> to remove seasonality from data and to make it stationery.</p>
+<p>If not included, certain of the classifier’s decision metrics would flag the start and ends of certain data files as anomalous due to seasonality.</p>
+<p>This step will also become necessary if the unseen data also has some seasonality which would decrease the precision of the model.</p>
+</section>
+<section id="model-development" class="level4">
+<h4 class="anchored" data-anchor-id="model-development">Model Development</h4>
+<p>The classifier was made to be compatible around the scikit-learn API such other functionalities of sklearn can wrap around it.</p>
+<p>This requires the model to inherit from <code>BaseEstimator</code> and <code>ClassifierMixin</code>, the <code>fit</code> method must return <code>self</code> and there must be a <code>score</code> function which predicts within the function.</p>
+<p>This allows wrappers like <code>GridSearchCV</code>, <code>LearningCurveDisplay</code> and <code>RocCurveDisplay</code> to be used on the model which avoids having to reinvent the wheel.</p>
+<p>The model’s classification is a consensus of multiple statistical metrics:</p>
+<ul>
+<li><strong>Z-score</strong> (normal z-score which depends on train data metrics)</li>
+<li><strong>IQR</strong></li>
+<li><strong>Mean Absolute Deviation</strong></li>
+<li><strong>Rolling Z-Score</strong> (Provided functions in the notebook deliverable)</li>
+</ul>
+<div class="callout callout-style-default callout-important callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Important
 </div>
 </div>
- <!-- /main -->
+<div class="callout-body-container callout-body">
+<p>The <strong>Rolling Z-Score</strong> does not use the train data metrics. It relies on a convolution of the data with a smoothing factor which is used to compute the residuals of that data.</p>
+<p>The residuals of the training data will be different to the testing data residuals meaning the <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\mu^2\)</span> will be dependent on the underlying input data</p>
+</div>
+</div>
+<p>The default scoring function is recall.</p>
+<p>The model was hyperparameter tuned for both recall and balanced accuracy.</p>
+<hr>
+</section>
+</section>
+<section id="isolation-forest" class="level3">
+<h3 class="anchored" data-anchor-id="isolation-forest">Isolation Forest</h3>
+<section id="preprocessing-1" class="level4">
+<h4 class="anchored" data-anchor-id="preprocessing-1">Preprocessing</h4>
+<p>The model does internal feature engineering and preprocessing by gnerating rolling window features used for smoothing.</p>
+<p>Includes a hyperparameter called <code>target_anomalies</code></p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Warning
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>The <code>target_anomalies</code> parameter is based of that the training data anomalies are known but the testing set anomalies are not.</p>
+<p>If used, the training dataset anomalies can be set but it is based on the assumption that the testing data won’t know the true number of anomalies thus the test set has to be passed to the model after the data was trained.</p>
+<p>Its also possible that the test data will have far more or far less anomalies than the training data. If this is the case the model will perform worse as the contamination factor is not aligned properly but this is the trade-off to avoid data leakage.</p>
+</div>
+</div>
+<p>After determining the optimal contamination parameters and creating rolling windows, an IsolationForest model is fit to the data and the number of anomaly ranges are returned internally as well.</p>
+</section>
+</section>
+<section id="provided-model" class="level3">
+<h3 class="anchored" data-anchor-id="provided-model">Provided Model</h3>
+<p>The provided model was altered in testing notebooks for testing purposes but the best results will be passed to the unaltered model in the deliverable notebook.</p>
+<p>The model was also made to wrap around the scikit-learn API like the Z-Score classifier such that hyperparameter tuning can be done on it.</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
     const isCodeAnnotation = (el) => {
       for (const clz of el.classList) {
         if (clz.startsWith('code-annotation-')) {                     

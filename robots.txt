@@ -1,0 +1,1 @@
+Sitemap: https://AlexTabble.github.io/EDAB2724_AnomalyDetection/sitemap.xml
