@@ -153,7 +153,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <div class="quarto-title-banner page-columns page-full">
     <div class="quarto-title column-body">
       <h1 class="title">Isolation Forest</h1>
-                      </div>
+                                <div class="quarto-categories">
+                <div class="quarto-category">Model</div>
+              </div>
+                  </div>
   </div>
     
   
@@ -3133,7 +3136,7 @@ Evaluation completed for all files with high-precision detection methods!</code>
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp('/' + window.location.host + '/');
+        var filterRegex = new RegExp("https:\/\/AlexTabble\.github\.io\/EDAB2724_AnomalyDetection\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }

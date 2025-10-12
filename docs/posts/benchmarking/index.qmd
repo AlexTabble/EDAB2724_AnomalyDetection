@@ -1,0 +1,390 @@
+---
+title: Benchmarking
+format: html
+categories: ['Documentation']
+---
+
+Grouping the anomalous regions have proved to be a challenge and requires a 
+robust method for discovering them.
+
+## The Class
+
+```{python} 
+import pandas as pd
+import numpy as np
+
+from sklearn.metrics import accuracy_score, balanced_accuracy_score
+from sklearn.metrics import precision_score, recall_score
+
+from great_tables import GT,md
+
+
+class Benchmarking:
+    """
+    Class for benchmarking anomaly detection models
+    """
+
+    def __init__():
+        pass
+
+    @staticmethod
+    def create_anomaly_groups(data : pd.DataFrame|pd.Series, col='outlier',
+                              include_single_groups=False,
+                              show_printout=True,
+                              merge_tolerance=5,
+                              noise_tolerance=3) -> list[tuple[int]]:
+        """
+        Creates list of tuples containing start and end indices of anomalous regions
+        
+        ---
+        Parameters
+        - data (datalike): Either a dataframe or series
+        - col (str): Needs to be specified if a dataframe 
+        - include_single_groups (boolean): whether to include anomalous regions
+                                            which has length of 1
+        - merge_tolerance (int) : threshold for gaps between anomalies and when
+                                    its appropriate to merge them.
+        - noise tolerance (int) : threshold for when groups are considered noise
+                                    and not truly anomalous regions
+        ---
+        Output
+         [(start_1,end_1),...,(start_n,end_n)]
+
+        ---
+        Example
+
+        output = Benchmarking.create_anomaly_groups(data)
+        print(output)
+
+        >>> [(30,35),...,(8000,8029)]
+        """
+        
+        group_ids = None
+        # StackOverflow magic that creates cumsum of anomaly col
+        if type(data) is pd.DataFrame:
+            group_ids = data[col].ne(data[col].shift()).cumsum()
+        else:
+            group_ids = data.ne(data.shift()).cumsum()
+            
+
+        grouped = data.groupby(group_ids)
+
+        groups = []
+
+        for group_id, group in grouped:
+
+            if type(group) is pd.DataFrame:
+                if group[col].iloc[0] == False:
+                    continue
+            else:
+                if group.iloc[0] == False:
+                    continue
+            
+            # If a single instance is an anomaly, skip or not?
+            if len(group) == 1 & include_single_groups: continue 
+            
+            indices = group.index.tolist()
+            
+            groups.append(
+                (
+                    indices[0],
+                    indices[-1] + 1 # Last index is exclusive so increment by 1
+                )
+            )
+
+        merged = []
+        start_prev,end_prev = groups[0][0], groups[0][1]
+        for idx, _ in enumerate(groups):
+            
+            if idx == 0: continue
+            
+            start_current = groups[idx][0]
+            end_current = groups[idx][1]
+            
+            if (start_current - end_prev) <= merge_tolerance:
+                end_prev = end_current
+            else:
+                merged.append((start_prev, end_prev))
+                start_prev = start_current
+                end_prev = end_current
+        merged.append((start_prev, end_prev))
+                
+        groups = merged
+        
+        groups = [group for group in groups if (group[1] - group[0]) > noise_tolerance] 
+            
+            
+        if show_printout:
+            print(f'{len(groups)} anomaly groups identified')
+        return groups
+
+    @staticmethod
+    def evaluate_model(y_true : np.array, y_pred : np.array,show_printout=True) -> pd.DataFrame:
+        """
+        Returns a DataFrame which contains the metrics for the model
+
+        ---
+        Parameters
+        - y_true (np.array) : True outlier series
+        - y_pred (np.array) : Predicted outlier series
+
+        ---
+        Output
+        pd.DataFrame
+
+        |                   | Score  |
+        |-------------------|--------|
+        | Accuracy          | 20     |
+        | Precision         | 40     |
+        | Recall            | 89     |
+        | Balanced Accuracy | 89     |
+        | Groups Accuracy   | 40     |
+
+        ---
+        Example
+        
+        metrics = Benchmarking.evaluate_model(y_true,y_pred)
+        print(metrics)
+        
+        """
+
+        accuracy = accuracy_score(y_true, y_pred)
+        precision = precision_score(y_true, y_pred)
+        recall = recall_score(y_true, y_pred)
+        balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
+
+        predicted_groups = Benchmarking.create_anomaly_groups(pd.Series(y_pred),
+                                                              show_printout=show_printout)
+        true_groups = Benchmarking.create_anomaly_groups(pd.Series(y_true),
+                                                         show_printout=show_printout)
+
+        group_accuracy = Benchmarking._evaluate_groups(predicted_groups, true_groups,
+                                                       group_penalty=False,
+                                                       show_printout=show_printout)
+        penalized_group_accuracy = Benchmarking._evaluate_groups(predicted_groups,
+                                                                 true_groups,
+                                                                 show_printout=show_printout)
+
+        metrics = pd.DataFrame({
+            'Score' : [
+                round(accuracy*100,2),
+                round(precision*100,2),
+                round(recall*100,2),
+                round(balanced_accuracy*100,2),
+                round(group_accuracy*100,2),
+                round(penalized_group_accuracy*100,2)
+            ]
+        }, index = ['Accuracy','Precision','Recall','Balanced Accuracy',
+                    'Group Accuracy','Penalised Group Accuracy'])
+        return metrics
+
+    @staticmethod
+    def _evaluate_groups(predicted_groups : list[tuple[int]],
+                         true_groups : list[tuple[int]],
+                         group_penalty : bool = True,
+                         show_printout :bool = True) -> float:
+
+        if show_printout:
+            if len(predicted_groups) > 10:
+                print(f'Model predicts {len(predicted_groups) -10} more than 10')
+            elif len(predicted_groups) < 10:
+                print(f'Model predicts {10 - len(predicted_groups)} less than 10')
+            else:
+                print('Number of groups match!')
+                   
+        actual_starts = [idx[0] for idx in true_groups]
+        actual_ends = [idx[1] for idx in true_groups]
+
+        valid_preds = 0
+        bad_preds = []
+        for pred in predicted_groups:
+            is_start_correct = pred[0] in actual_starts
+            is_end_correct = pred[1] in actual_ends
+            
+            if is_end_correct & is_end_correct : valid_preds +=1
+            else:
+                bad_preds.append(pred)
+
+        accuracy = valid_preds / len(true_groups)
+
+        # PERF: I'm not sure wether this is appropriate
+        # This is on the assumption that the unseen data also contains
+        # exactly 10 anomalies which means the model does not necessarly generalise
+        # to unseen data where the anomaly count is known.
+        # NOTE: I will ask whether this is appropriate
+        # For testing purposes, I'm including this but use it by keeping data leakage
+        # in mind
+        if group_penalty:
+            penalty = min(len(predicted_groups), len(true_groups)) / max(
+                len(predicted_groups), len(true_groups)
+            )
+            accuracy = accuracy * penalty
+        
+        return accuracy
+        
+
+    @staticmethod
+    def print_evaluation(y_true : np.array, y_pred : np.array, model_name: str) -> None:
+
+        metrics = Benchmarking.evaluate_model(y_true, y_pred)
+        metrics = metrics.reset_index().rename({'index' : 'Metric'})
+
+        (
+            GT(metrics)
+            .tab_header(md(f'Model Results for **{model_name}**'))
+            .tab_source_note(md("Metrics are in percentage(%)"))
+        ).show()
+```
+
+## Benchmark Documentation
+
+The most important function in the class is `create_anomaly_groups()`
+
+#### `create_anomaly_groups`
+
+**Parameters**
+
+| Parameter               | Type                          | Description                                                                                                      |
+| ----------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `data`                  | `pd.DataFrame` or `pd.Series` | Input data containing anomalies. If DataFrame, the column must be specified.                                     |
+| `col`                   | `str`                         | Column name to check for anomalies (only needed if `data` is a DataFrame). Default is `'outlier'`.               |
+| `include_single_groups` | `bool`                        | Whether to include anomalous regions of length 1. Default is `False`.                                            |
+| `show_printout`         | `bool`                        | Whether to print the number of anomaly groups identified. Default is `True`.                                     |
+| `merge_tolerance`       | `int`                         | Maximum gap between consecutive anomaly regions that will be merged. Default is `5`.                             |
+| `noise_tolerance`       | `int`                         | Minimum length for a group to be considered a true anomaly; shorter groups are treated as noise. Default is `3`. |
+
+**Output**
+| Output | Type | Description |
+|----------------|--------------------|-----------------------|
+| `groups` | `list[tuple[int]]` | ${ (start_1,end_1),(start_2,end_2), \dots, (start_n, end_n)}$
+This function can be used regardless of the chosen classifier.
+
+### Does it generalise?
+
+Most models have good accuracies and precision,recall values so actual classifiers
+are not the main problem.
+
+To accurately state where the anomalous regions are is a challenge as you will
+have to tune the `merge_tolerance` and `noise_tolerance` parameters for the
+grouper which could introduce possible bias.
+
+If the nature of the data is known(i.e. Financial, Geogolicial, etc) those
+parameters can be tuned with relevant business knowledge.
+
+The dataset is called _ec2_utilization.zip_ which monitors the cpu usage of an
+AWS EC2 instance over time. More research can be done to determine the norm
+in terms of deviation frequency and length of deviation. (I'm assuming the
+data is about cpu usage but we probably need to confirm)
+
+To generalise the classification of anomalous period, I believe some leniency in
+the classification of what an anomalous period is necessary.
+
+For example: If the daily LIBOR rate decreased for 5 days during the 2007-2008
+GFC, it does not mean the entire period is not anomalous. If this 5-day period
+is not ignored as noise, the GFC would be classified as two anomalous periods(one
+before the 5 days and one after) which essentially fragments the period.
+
+This is seen extensively in the Z-Score predictor where a single period is
+fragmented into multiple smaller periods with small gaps between them.
+
+### Possible Improvements
+
+`include_single_groups` might cause a fragmentation of a a single anomalous
+region into two anomalous regions with incorrect $start_{n-1$ and $end_{n}$
+values.
+
+The reason I included the parameter in the first place is that if an anomaly has
+length of 1, its start- and end points are the same like $(n,n)$ which I didn't
+want to deal with.
+
+After making the grouper more tolerant towards gaps and noise, I noticed that it
+might not be a good parameter to include.
+
+## Available Functions in Benchmarking.py
+
+#### `evaluate_model`
+
+**Input**
+
+| Parameter | Type       | Description                                               |
+| --------- | ---------- | --------------------------------------------------------- |
+| `y_true`  | `np.array` | True binary anomaly labels (1 for anomaly, 0 for normal). |
+| `y_pred`  | `np.array` | Predicted binary anomaly labels.                          |
+
+**Output**
+
+| Output    | DataType  |
+| --------- | --------- |
+| `metrics` | DataFrame |
+
+| Metric                     | Description                                                           |
+| -------------------------- | --------------------------------------------------------------------- |
+| `Accuracy`                 | Standard classification accuracy.                                     |
+| `Precision`                | Fraction of predicted anomalies that are true anomalies.              |
+| `Recall`                   | Fraction of true anomalies that were detected.                        |
+| `Balanced Accuracy`        | Average of recall per class (handles imbalance).                      |
+| `Group Accuracy`           | Accuracy at the anomaly group level (based on `_evaluate_groups`).    |
+| `Penalised Group Accuracy` | Group accuracy with penalty applied for mismatch in number of groups. |
+
+**Example usage**
+
+```python
+metrics = Benchmarking.evaluate_model(y_true, y_pred)
+print(metrics)
+```
+
+#### `print_evaluation`
+
+**Input**
+| Parameter | Type | Description |
+| ------------ | ---------- | -------------------------------------------------------- |
+| `y_true` | `np.array` | True anomaly labels. |
+| `y_pred` | `np.array` | Predicted anomaly labels. |
+| `model_name` | `str` | Name of the model, used for display in the table header. |
+
+**Output**
+| Output | DataType |
+|-----------|------------|
+| printed DataFrame | None|
+
+**Example usage**
+
+```python
+
+Benchmarking.print_evaluation(y_true, y_pred, "ARIMA(Tuned)")
+```
+
+### Benchmarking usage
+
+#### For Google Colab
+
+Copy and paste the file contents into a cell
+
+#### For Personal Machine
+
+Make sure benchmarking.py file is in same directory as .ipynb/.qmd file
+
+```
+.
+├── benchmarking.py
+├── test
+│   ├── 01.csv
+│   ├── 02.csv
+│   ├── 03.csv
+│   ├── 04.csv
+│   ├── 05.csv
+│   ├── 06.csv
+│   ├── 07.csv
+│   ├── 08.csv
+│   ├── 09.csv
+│   └── 10.csv
+└── Z*score_model.qmd -> \_Same directory level as benchmarking.py*
+
+```
+
+```python
+from benchmarking import Benchmarking
+
+metrics = Benchmarking.evaluate_model(y_true, y_pred)
+```
+

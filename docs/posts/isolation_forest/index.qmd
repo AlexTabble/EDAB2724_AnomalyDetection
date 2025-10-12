@@ -2,26 +2,8 @@
 title: 'Isolation Forest'
 html:
   theme: darkly
+categories: ['Model']
 ---
-
-
-
-**Read this**
-- Do **not** add or remove Python libraries. Stick to the imports already present in this notebook. Changing libraries is an automatic **−100%**.
-- You may use **machine learning, statistics, or a hybrid** approach — but your method must generalize to **new, unseen datasets**.
-- Datasets: We have 10 time-series with **10 000 rows** each; anomalies: **10 segments per dataset**.
- You can upload the zip to you Google drive and use the ID from Google drive url.
-- Scoring in class: we will run your detector on **novel datasets**. **#correct/10 × 100** is your percentage.
-- Over/under-fitting penalties may apply (**−50%**).
-
-# What you must do
-Implement your anomaly detector using any means (could it be Machine Learning or statistics or a combination of both to improve the accuracy of the model). Return the index ranges for the anomalies for example 2001-2010.  
-
-You can also add small EDA (plots/stats) in the **EDA cell** below to justify your approach.
-
-**Do not modify** existing data loading and the libraries.
-
-# **The Anomaly Detection Notebook**
 
 ```{python}
 #| colab: {base_uri: https://localhost:8080/, height: 206}

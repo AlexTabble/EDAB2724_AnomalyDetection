@@ -1,0 +1,99 @@
+---
+title: "ReadMe"
+categories: ['Documentation']
+---
+
+## Workflow
+
+Model development and EDA was done in separate notebooks which consists of:
+
+- Z-score classifier
+- Isolation Forest classifier
+- Provided Model
+
+A benchmarking class was created to evaluate model performance on the 10 test 
+files for the z-score model.
+
+## Breakdown of each model
+
+### Z-score classifier
+
+#### Preprocessing
+
+Included using `scipy.signal.detrend` to remove seasonality from data and to make
+it stationery.
+
+If not included, certain of the classifier's decision metrics would flag the 
+start and ends of certain data files as anomalous due to seasonality.
+
+This step will also become necessary if the unseen data also has some seasonality
+which would decrease the precision of the model.
+
+#### Model Development
+
+The classifier was made to be compatible around the scikit-learn API such other 
+functionalities of sklearn can wrap around it.
+
+This requires the model to inherit from `BaseEstimator` and `ClassifierMixin`,
+the `fit` method must return `self` and there must be a `score` function which
+predicts within the function.
+
+This allows wrappers like `GridSearchCV`, `LearningCurveDisplay` and `RocCurveDisplay`
+to be used on the model which avoids having to reinvent the wheel.
+
+The model's classification is a consensus of multiple statistical metrics:
+
+- **Z-score** (normal z-score which depends on train data metrics)
+- **IQR**
+- **Mean Absolute Deviation** 
+- **Rolling Z-Score** (Provided functions in the notebook deliverable)
+
+::: {.callout-important}
+The **Rolling Z-Score** does not use the train data metrics. It relies on a 
+convolution of the data with a smoothing factor which is used to compute the 
+residuals of that data. 
+
+The residuals of the training data will be different to the testing data residuals
+meaning the $\mu$ and $\mu^2$ will be dependent on the underlying input data 
+:::
+
+The default scoring function is recall.
+
+The model was hyperparameter tuned for both recall and balanced accuracy.
+
+---
+
+### Isolation Forest
+
+#### Preprocessing
+
+The model does internal feature engineering and preprocessing by gnerating 
+rolling window features used for smoothing. 
+
+Includes a hyperparameter called `target_anomalies`
+
+::: {.callout-warning}
+The `target_anomalies` parameter is based of that the training data anomalies 
+are known but the testing set anomalies are not. 
+
+If used, the training dataset anomalies can be set but it is based on the assumption
+that the testing data won't know the true number of anomalies thus the test set
+has to be passed to the model after the data was trained.
+
+Its also possible that the test data will have far more or far less anomalies than
+the training data. If this is the case the model will perform worse as the 
+contamination factor is not aligned properly but this is the trade-off to avoid
+data leakage.
+:::
+
+After determining the optimal contamination parameters and creating rolling windows,
+an IsolationForest model is fit to the data and the number of anomaly ranges are
+returned internally as well.
+
+### Provided Model
+
+The provided model was altered in testing notebooks for testing purposes but the
+best results will be passed to the unaltered model in the deliverable notebook.
+
+The model was also made to wrap around the scikit-learn API like the Z-Score
+classifier such that hyperparameter tuning can be done on it.
