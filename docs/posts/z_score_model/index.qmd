@@ -67,8 +67,8 @@ class StatsModel(BaseEstimator, ClassifierMixin):
         w=61,
         iqr_threshold=1.5,
         mad_threshold=2.465,
-        normal_z_threshold=2,
-        rolling_z_threshold=2,
+        normal_z_threshold=3,
+        rolling_z_threshold=3,
         metric_consensus=3,
     ):
 

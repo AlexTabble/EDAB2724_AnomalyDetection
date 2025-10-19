@@ -1,0 +1,465 @@
+---
+title: 'Provided Model Tuning'
+author: 'alex'
+format:
+  html:
+    theme: darkly
+---
+
+This is not the final notebook we will submit so we do change some of the 
+model here in order to tune it.
+
+```{python}
+import pandas as pd
+import os
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+train_file_names = os.listdir("train/")
+train_file_names.sort()
+
+train_files = []
+for file in train_file_names:
+    train_files.append(pd.read_csv(f"train/{file}", sep=";"))
+
+test_file_names = os.listdir("test/")
+test_file_names.sort()
+
+test_files = []
+for file in test_file_names:
+    test_files.append(pd.read_csv(f"test/{file}", sep=";"))
+
+test_files[0].head()
+```
+
+
+# **The Model**
+
+```{python}
+import warnings
+import matplotlib.pyplot as plt
+import numpy as np
+from numba import njit
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import IsolationForest
+from sklearn.svm import OneClassSVM
+from sklearn.neighbors import LocalOutlierFactor
+from sklearn.covariance import EllipticEnvelope
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.metrics import recall_score
+
+warnings.filterwarnings(
+    "ignore", message="Determinant has increased; this should not happen"
+)
+
+
+@njit
+def create_windows_numba(series, window_size):
+    n_windows = len(series) - window_size + 1
+    windows = np.empty((n_windows, window_size), dtype=np.float32)
+    for i in range(n_windows):
+        windows[i, :] = series[i : i + window_size]
+    return windows
+
+
+@njit
+def normalize_scores(scores):
+    mn = np.min(scores)
+    mx = np.max(scores)
+    return (scores - mn) / (mx - mn + 1e-8)
+
+
+# to make the class tunable, i had to add the base interfaces that allows it to
+# wrap around the api
+class AnomalyDetectionModel(BaseEstimator, ClassifierMixin):
+    def __init__(self, window_size=30, contamination=0.01):
+        self.window_size = window_size
+        self.offset = window_size // 2
+        self.contamination = contamination
+
+        self.scaler = StandardScaler()
+        self.models = {
+            "isolationforest": IsolationForest(
+                contamination=contamination, random_state=42
+            ),
+            "oneclasssvm": OneClassSVM(kernel="rbf", gamma="scale", nu=contamination),
+            "ellipticenvelope": EllipticEnvelope(
+                contamination=contamination, support_fraction=0.75, random_state=42
+            ),
+        }
+
+        self.use_lof = True
+        self.lof_model = LocalOutlierFactor(
+            n_neighbors=20, contamination=contamination, novelty=True
+        )
+        self.full_anomaly_mask = None
+
+    def fit(self, X: np.ndarray, y: np.ndarray = None):
+        self.train_windows = self._create_windows(X)
+        self.scaled_train_windows = self.scaler.fit_transform(self.train_windows)
+        for model in self.models.values():
+            model.fit(self.scaled_train_windows)
+        if self.use_lof:
+            self.lof_model.fit(self.scaled_train_windows)
+
+        return self
+
+    def predict(self, X: np.ndarray):
+        test_windows = self._create_windows(X)
+        scaled = self.scaler.transform(test_windows)
+
+        all_scores = []
+        for model in self.models.values():
+            if hasattr(model, "decision_function"):
+                s = model.decision_function(scaled)
+                all_scores.append(normalize_scores(s))
+            else:
+                preds = model.predict(scaled)
+                all_scores.append(np.where(preds == -1, 0.0, 1.0))
+
+        if self.use_lof:
+            lof_s = self.lof_model.decision_function(scaled)
+            all_scores.append(normalize_scores(lof_s))
+
+        avg_scores = np.mean(np.stack(all_scores, axis=0), axis=0)
+        thresh = np.percentile(avg_scores, self.contamination * 100)
+        mask = np.zeros(len(X), dtype=int)
+        mask[self.offset : self.offset + len(avg_scores)] = (
+            avg_scores <= thresh
+        ).astype(int)
+        self.full_anomaly_mask = mask
+        idx = np.argmin(avg_scores)
+        return idx + self.offset
+
+    def _create_windows(self, series: np.ndarray):
+        return create_windows_numba(series, self.window_size)
+
+    def score(self, X: np.ndarray, y_true: np.ndarray):
+        most_anomalous = self.predict(X)
+
+        # This model does not return the predictions for anomalies but instead
+        # returns the most anomalous observation
+        # It does store anomaly mask which is actually the predictions which
+        # is being passed to the scorer as the y_pred parameter enabling tuning
+
+        return recall_score(y_true, self.full_anomaly_mask)
+```
+
+## Explanation
+
+This pipeline works on the idea that:
+
+        1) it builds upon sliding windows
+        2) gathers normalised anomaly scores from each sub-model and uses them
+        3) averages the anomaly scores
+        4) computes a binary mask by thresholding at the 1st percentile so that it can compare outputs
+        5) stores self.full_anomaly_mask (same length as the placeholder value)
+        6) returns the single index of the lowest‐score window center which closes the loop on the sliding window idea
+
+
+## **STUDENT TODO — Implement your anomaly detector**
+Implement Machine Learning/ Statistical models or both. Use the test_files (test series) to train your models and list of anomaly index range for example Anomaly 1:   2001-2005
+Anomaly 2:   2010-2012
+
+
+**Constraints**
+
+- Keep it efficient; we will run this over 10 datasets and additional novel datasets in class.
+
+
+```{python}
+from benchmarking import Benchmarking
+from sklearn.preprocessing import StandardScaler
+
+train = pd.concat(test_files[:-2])
+test = pd.concat(test_files[:2])
+
+model = AnomalyDetectionModel()
+
+X_train = train["Value1"].to_numpy().flatten()
+y_train = train["Labels"].to_numpy().flatten()
+
+X_test = test["Value1"].to_numpy().flatten()
+y_test = test["Labels"].to_numpy().flatten()
+
+model.use_lof = False
+model.fit(X_train, y_train)
+
+most_anomalous = model.predict(X_test)
+y_pred = model.full_anomaly_mask
+
+# Benchmarking.evaluate_model(y_test, y_pred)
+Benchmarking.print_evaluation(y_test, y_pred, model_name="Provided Model Benchmark")
+```
+
+### Learning Curve of Benchmark Model
+
+```{python} 
+from sklearn.model_selection import LearningCurveDisplay
+
+LearningCurveDisplay.from_estimator(
+    estimator=AnomalyDetectionModel(),
+    X = pd.concat(test_files)['Value1'].to_numpy().flatten(),
+  y=pd.concat(test_files)['Labels'].to_numpy().flatten(),
+)
+plt.show()
+```
+
+```{python} 
+# from sklearn.model_selection import GridSearchCV
+#
+# params = {
+#     "window_size": [25,31, 50, 70, 90],
+#     "contamination": [0.01, 0.1, 0.15, 0.2, 0.25],
+# }
+#
+# grid = GridSearchCV(
+#     estimator=AnomalyDetectionModel(), param_grid=params, cv=3, verbose=2
+# )
+#
+# grid.fit(X_train, y_train)
+```
+
+```{python} 
+best_model = AnomalyDetectionModel(window_size=70,contamination=0.2)
+
+model.fit(X_train, y_train)
+most_anamalous = model.predict(X_test)
+y_pred = model.full_anomaly_mask
+
+Benchmarking.print_evaluation(y_test, y_pred,model_name='Provided Model after Tuning')
+```
+
+
+### Learning Curve of Tuned Model
+
+```{python} 
+# LearningCurveDisplay.from_estimator(
+#   estimator=AnomalyDetectionModel(window_size=70,contamination=0.2),
+#   X=pd.concat(test_files)['Value1'].to_numpy().flatten(),
+#   y=pd.concat(test_files)['Labels'].to_numpy().flatten(),
+#   cv=5
+# )
+# plt.show()
+
+# print(grid.best_params_)
+# print(grid.best_score_)
+```
+
+## Evaluation of Tuning Process
+
+```{python} 
+import re
+tuning_logs = """
+[CV] END .................contamination=0.01, window_size=25; total time=  30.7s
+[CV] END .................contamination=0.01, window_size=25; total time=  33.1s
+[CV] END .................contamination=0.01, window_size=25; total time=  34.9s
+[CV] END .................contamination=0.01, window_size=31; total time=  35.4s
+[CV] END .................contamination=0.01, window_size=31; total time=  38.0s
+[CV] END .................contamination=0.01, window_size=31; total time=  33.8s
+[CV] END .................contamination=0.01, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.01, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.01, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.01, window_size=70; total time= 3.3min
+[CV] END .................contamination=0.01, window_size=70; total time= 3.0min
+[CV] END .................contamination=0.01, window_size=70; total time= 3.2min
+[CV] END .................contamination=0.01, window_size=90; total time= 5.2min
+[CV] END .................contamination=0.01, window_size=90; total time= 5.4min
+[CV] END .................contamination=0.01, window_size=90; total time= 5.4min
+[CV] END ..................contamination=0.1, window_size=25; total time=  36.2s
+[CV] END ..................contamination=0.1, window_size=25; total time=  34.9s
+[CV] END ..................contamination=0.1, window_size=25; total time=  35.5s
+[CV] END ..................contamination=0.1, window_size=31; total time=  38.8s
+[CV] END ..................contamination=0.1, window_size=31; total time=  38.0s
+[CV] END ..................contamination=0.1, window_size=31; total time=  39.4s
+[CV] END ..................contamination=0.1, window_size=50; total time= 1.3min
+[CV] END ..................contamination=0.1, window_size=50; total time= 1.3min
+[CV] END ..................contamination=0.1, window_size=50; total time= 1.4min
+[CV] END ..................contamination=0.1, window_size=70; total time= 3.5min
+[CV] END ..................contamination=0.1, window_size=70; total time= 3.3min
+[CV] END ..................contamination=0.1, window_size=70; total time= 3.6min
+[CV] END ..................contamination=0.1, window_size=90; total time= 5.8min
+[CV] END ..................contamination=0.1, window_size=90; total time= 5.1min
+[CV] END ..................contamination=0.1, window_size=90; total time= 5.6min
+[CV] END .................contamination=0.15, window_size=25; total time=  35.3s
+[CV] END .................contamination=0.15, window_size=25; total time=  34.8s
+[CV] END .................contamination=0.15, window_size=25; total time=  32.1s
+[CV] END .................contamination=0.15, window_size=31; total time=  34.8s
+[CV] END .................contamination=0.15, window_size=31; total time=  34.9s
+[CV] END .................contamination=0.15, window_size=31; total time=  40.8s
+[CV] END .................contamination=0.15, window_size=50; total time= 1.2min
+[CV] END .................contamination=0.15, window_size=50; total time= 1.7min
+[CV] END .................contamination=0.15, window_size=50; total time= 1.7min
+[CV] END .................contamination=0.15, window_size=70; total time= 3.8min
+[CV] END .................contamination=0.15, window_size=70; total time= 3.2min
+[CV] END .................contamination=0.15, window_size=70; total time= 3.2min
+[CV] END .................contamination=0.15, window_size=90; total time= 4.1min
+[CV] END .................contamination=0.15, window_size=90; total time= 3.3min
+[CV] END .................contamination=0.15, window_size=90; total time= 5.6min
+[CV] END ..................contamination=0.2, window_size=25; total time=  32.8s
+[CV] END ..................contamination=0.2, window_size=25; total time=  35.3s
+[CV] END ..................contamination=0.2, window_size=25; total time=  36.4s
+[CV] END ..................contamination=0.2, window_size=31; total time=  39.9s
+[CV] END ..................contamination=0.2, window_size=31; total time=  34.2s
+[CV] END ..................contamination=0.2, window_size=31; total time=  38.3s
+[CV] END ..................contamination=0.2, window_size=50; total time= 1.1min
+[CV] END ..................contamination=0.2, window_size=50; total time= 1.2min
+[CV] END ..................contamination=0.2, window_size=50; total time= 1.2min
+[CV] END ..................contamination=0.2, window_size=70; total time= 3.2min
+[CV] END ..................contamination=0.2, window_size=70; total time= 2.9min
+[CV] END ..................contamination=0.2, window_size=70; total time= 3.2min
+[CV] END ..................contamination=0.2, window_size=90; total time= 4.8min
+[CV] END ..................contamination=0.2, window_size=90; total time= 5.0min
+[CV] END ..................contamination=0.2, window_size=90; total time= 5.2min
+[CV] END .................contamination=0.25, window_size=25; total time=  30.1s
+[CV] END .................contamination=0.25, window_size=25; total time=  30.6s
+[CV] END .................contamination=0.25, window_size=25; total time=  31.2s
+[CV] END .................contamination=0.25, window_size=31; total time=  35.2s
+[CV] END .................contamination=0.25, window_size=31; total time=  34.5s
+[CV] END .................contamination=0.25, window_size=31; total time=  36.9s
+[CV] END .................contamination=0.25, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.25, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.25, window_size=50; total time= 1.1min
+[CV] END .................contamination=0.25, window_size=70; total time= 3.4min
+[CV] END .................contamination=0.25, window_size=70; total time= 3.6min
+[CV] END .................contamination=0.25, window_size=70; total time= 3.9min
+[CV] END .................contamination=0.25, window_size=90; total time= 5.4min
+[CV] END .................contamination=0.25, window_size=90; total time= 5.3min
+[CV] END .................contamination=0.25, window_size=90; total time= 5.2min
+"""
+
+pattern = r"contamination=(\d*\.\d+|\d+), window_size=(\d+); total time=\s*([\d\.]+)([sm])"
+matches = re.findall(pattern, tuning_logs)
+
+tuning_time = pd.DataFrame()
+for contamination,window_size,time,unit in matches:
+  if unit == 'm':
+    time = float(time)*60
+  temp = pd.DataFrame({
+    'contamination' : [float(contamination)],
+    'Window Size' : [float(window_size)],
+    'Time' : [float(time)],
+  })
+
+  tuning_time = pd.concat([tuning_time, temp])
+```
+
+```{python} 
+import seaborn as sns
+temp= tuning_time.groupby(['contamination','Window Size']).mean().reset_index()
+temp = temp.pivot(index='contamination',columns='Window Size',values='Time')
+
+plt.title('Execution Time of Tuning Combinations(in seconds)')
+plt.legend()
+sns.heatmap(temp,annot=True,fmt='.2f')
+plt.show()
+```
+
+
+# **Evaluation**
+ The higher the accuracy the better.
+
+```{python}
+# | colab: {base_uri: https://localhost:8080/}
+correct = 0
+for train, test in zip(train_files, test_files):
+    model = AnomalyDetectionModel()
+
+    model.fit(train.Value1.to_numpy().flatten(), train.Labels.to_numpy().flatten())
+
+    prediction_index = model.predict(test.Value1.to_numpy().flatten())
+
+    if test.loc[prediction_index, "Labels"] == 1:
+        correct += 1
+
+print(f"Total score: {correct}%")
+```
+
+```{python}
+# Use other various evaluation metrics applicable to your models.
+```
+
+#**Limitations**
+While the ensemble sliding-window model seems to be a good fir,it does have some downsides.
+
+##**Computational Cost**:
+Because the model creates overlapping windows and runs multiple anomaly detection algorithms on each window, it can be computationally intensive—especially for long time series or when using a small window size (which results in many windows).
+
+##**This means it will require increased memory usage**
+
+##**It also means longer runtime compared to a single-model approach**
+
+It may not be suitable for very large datasets or real-time applications unless optimized or run on powerful hardware and there are some constructive bial issues that still need to be tested.
+
+**_For faster experiments, we could use a larger window size, downsampling the data, or disabling one or more models in the ensemble, but for this we need testing_**
+
+
+# **Visualisation of the anomalies**  
+
+Reuse this code to visualize the anomalies.
+
+```{python}
+# | colab: {base_uri: https://localhost:8080/, height: 1000}
+def visualize_anomaly_detection(test_df, model, file_idx=None):
+    """
+    Visualizes:
+    - Signal (black)
+    - Ground truth anomalies (red)
+    - Predicted anomalies (green)
+    - Most anomalous index (blue dot)
+    """
+    series = test_df["Value1"].to_numpy()
+    true_mask = test_df["Labels"].to_numpy().astype(bool)
+    pred_mask = model.full_anomaly_mask.astype(bool)
+    most_anomalous = np.argmin(pred_mask) if pred_mask.any() else None
+    pred_index = model.predict(series)  # triggers .full_anomaly_mask
+
+    plt.figure(figsize=(14, 4))
+    plt.plot(series, color="black", lw=1, label="Signal")
+
+    if pred_mask.any():
+        plt.fill_between(
+            np.arange(len(series)),
+            series,
+            where=pred_mask,
+            color="green",
+            alpha=0.3,
+            label="Predicted Anomaly",
+        )
+
+    if true_mask.any():
+        plt.fill_between(
+            np.arange(len(series)),
+            series,
+            where=true_mask,
+            color="red",
+            alpha=0.3,
+            label="True Anomaly",
+        )
+
+    if 0 <= pred_index < len(series):
+        plt.scatter(
+            pred_index,
+            series[pred_index],
+            color="blue",
+            s=50,
+            label="Most Anomalous Point",
+        )
+
+    title = f"File {file_idx}" if file_idx is not None else "Anomaly Detection"
+    plt.title(title)
+    plt.xlabel("Time Step")
+    plt.ylabel("Value")
+    plt.legend(loc="upper right")
+    plt.tight_layout()
+    plt.show()
+
+
+# for idx, (train, test) in enumerate(zip(train_files, test_files), 1):
+#     model = AnomalyDetectionModel(window_size=30, contamination=0.01)
+#     model.fit(train['Value1'].to_numpy(), train['Labels'].to_numpy())
+#     model.predict(test['Value1'].to_numpy())  # sets .full_anomaly_mask
+#     visualize_anomaly_detection(test, model, file_idx=idx)
+```
