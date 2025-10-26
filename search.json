@@ -4,28 +4,7 @@
     "href": "index.html",
     "title": "Models",
     "section": "",
-    "text": "Benchmarking\n\n\n\nDocumentation\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nZ Score Classifier\n\n\n\nModel\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nExploratory Data Analysis\n\n\n\nEDA\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nProvided Model Tuning\n\n\n\n\n\n\n\n\nalex\n\n\n\n\n\n\n\n\n\n\n\n\nIsolation Forest\n\n\n\nModel\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nReadMe\n\n\n\nDocumentation\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nProvided Model Tuning\n\n\n\nModel\n\n\n\n\n\n\n\n\n\n\n\n\nNo matching items"
-  },
-  {
-    "objectID": "posts/ReadME/index.html",
-    "href": "posts/ReadME/index.html",
-    "title": "ReadMe",
-    "section": "",
-    "text": "Model development and EDA was done in separate notebooks which consists of:\n\nZ-score classifier\nIsolation Forest classifier\nProvided Model\n\nA benchmarking class was created to evaluate model performance on the 10 test files for the z-score model."
-  },
-  {
-    "objectID": "posts/ReadME/index.html#workflow",
-    "href": "posts/ReadME/index.html#workflow",
-    "title": "ReadMe",
-    "section": "",
-    "text": "Model development and EDA was done in separate notebooks which consists of:\n\nZ-score classifier\nIsolation Forest classifier\nProvided Model\n\nA benchmarking class was created to evaluate model performance on the 10 test files for the z-score model."
-  },
-  {
-    "objectID": "posts/ReadME/index.html#breakdown-of-each-model",
-    "href": "posts/ReadME/index.html#breakdown-of-each-model",
-    "title": "ReadMe",
-    "section": "Breakdown of each model",
-    "text": "Breakdown of each model\n\nZ-score classifier\n\nPreprocessing\nIncluded using scipy.signal.detrend to remove seasonality from data and to make it stationery.\nIf not included, certain of the classifier’s decision metrics would flag the start and ends of certain data files as anomalous due to seasonality.\nThis step will also become necessary if the unseen data also has some seasonality which would decrease the precision of the model.\n\n\nModel Development\nThe classifier was made to be compatible around the scikit-learn API such other functionalities of sklearn can wrap around it.\nThis requires the model to inherit from BaseEstimator and ClassifierMixin, the fit method must return self and there must be a score function which predicts within the function.\nThis allows wrappers like GridSearchCV, LearningCurveDisplay and RocCurveDisplay to be used on the model which avoids having to reinvent the wheel.\nThe model’s classification is a consensus of multiple statistical metrics:\n\nZ-score (normal z-score which depends on train data metrics)\nIQR\nMean Absolute Deviation\nRolling Z-Score (Provided functions in the notebook deliverable)\n\n\n\n\n\n\n\nImportant\n\n\n\nThe Rolling Z-Score does not use the train data metrics. It relies on a convolution of the data with a smoothing factor which is used to compute the residuals of that data.\nThe residuals of the training data will be different to the testing data residuals meaning the \\(\\mu\\) and \\(\\mu^2\\) will be dependent on the underlying input data\n\n\nThe default scoring function is recall.\nThe model was hyperparameter tuned for both recall and balanced accuracy.\n\n\n\n\nIsolation Forest\n\nPreprocessing\nThe model does internal feature engineering and preprocessing by gnerating rolling window features used for smoothing.\nIncludes a hyperparameter called target_anomalies\n\n\n\n\n\n\nWarning\n\n\n\nThe target_anomalies parameter is based of that the training data anomalies are known but the testing set anomalies are not.\nIf used, the training dataset anomalies can be set but it is based on the assumption that the testing data won’t know the true number of anomalies thus the test set has to be passed to the model after the data was trained.\nIts also possible that the test data will have far more or far less anomalies than the training data. If this is the case the model will perform worse as the contamination factor is not aligned properly but this is the trade-off to avoid data leakage.\n\n\nAfter determining the optimal contamination parameters and creating rolling windows, an IsolationForest model is fit to the data and the number of anomaly ranges are returned internally as well.\n\n\n\nProvided Model\nThe provided model was altered in testing notebooks for testing purposes but the best results will be passed to the unaltered model in the deliverable notebook.\nThe model was also made to wrap around the scikit-learn API like the Z-Score classifier such that hyperparameter tuning can be done on it."
+    "text": "Benchmarking\n\n\n\nDocumentation\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nZ Score Classifier\n\n\n\nModel\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nExploratory Data Analysis\n\n\n\nEDA\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nProvided Model Tuning\n\n\n\n\n\n\n\n\nalex\n\n\n\n\n\n\n\n\n\n\n\n\nReadMe\n\n\n\nDocumentation\n\n\n\n\n\n\n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "posts/provided_model_2/index.html",
@@ -168,59 +147,24 @@
     "text": "Conclusion\nThe training data cannot be used to predict the testing data for two reasons:\n\nThe training data is 2000 observations per file totaling 20,000 compared to the testing data which is 10,000 per file totaling 100,000\nThe training data does not follow the same distribution as the testing data meaning a statistical model which makes an assumption about the distribution isn’t appropriate\n\nThe biggest problem is that the training data is so much less than the testing data.\nIf we combine the files together, the train-test split won’t be 80% and 20% for train and test respectively but will be the other way around i.e:\n\ntrain = 17% of all data\ntest = 83% of all data\n\nTo balance it properly would require sampling strategies but the goal is anomaly detection so oversampling to balance anomalies would add a lot of noise to the data.\nThe training data also has no anomalies to detect so the algorithm won’t learn from the data itself."
   },
   {
-    "objectID": "posts/isolation_forest/index.html",
-    "href": "posts/isolation_forest/index.html",
-    "title": "Isolation Forest",
+    "objectID": "posts/ReadME/index.html",
+    "href": "posts/ReadME/index.html",
+    "title": "ReadMe",
     "section": "",
-    "text": "Read this - Do not add or remove Python libraries. Stick to the imports already present in this notebook. Changing libraries is an automatic −100%. - You may use machine learning, statistics, or a hybrid approach — but your method must generalize to new, unseen datasets. - Datasets: We have 10 time-series with 10 000 rows each; anomalies: 10 segments per dataset. You can upload the zip to you Google drive and use the ID from Google drive url. - Scoring in class: we will run your detector on novel datasets. #correct/10 × 100 is your percentage. - Over/under-fitting penalties may apply (−50%)."
+    "text": "Model development and EDA was done in separate notebooks which consists of:\n\nZ-score classifier\nIsolation Forest classifier\nProvided Model\n\nA benchmarking class was created to evaluate model performance on the 10 test files for the z-score model."
   },
   {
-    "objectID": "posts/isolation_forest/index.html#student-eda",
-    "href": "posts/isolation_forest/index.html#student-eda",
-    "title": "Isolation Forest",
-    "section": "Student EDA",
-    "text": "Student EDA\nUse this cell to explore the signal (e.g., plot, summary stats).\n\n# STUDENT EDA\ntry:\n    df = test_files[0]\n    print(df.head())\nexcept Exception as e:\n    print('EDA note: run the original data-loading cells first (the ones that populate train_files/test_files).')\n\n      Value1  Labels\n0  20.801402       0\n1  26.800208       0\n2  33.154527       0\n3  39.189824       0\n4  40.631321       0"
-  },
-  {
-    "objectID": "posts/isolation_forest/index.html#explanation",
-    "href": "posts/isolation_forest/index.html#explanation",
-    "title": "Isolation Forest",
-    "section": "Explanation",
-    "text": "Explanation\nThis pipeline works on the idea that:\n    1) it builds upon sliding windows\n    2) gathers normalised anomaly scores from each sub-model and uses them\n    3) averages the anomaly scores\n    4) computes a binary mask by thresholding at the 1st percentile so that it can compare outputs\n    5) stores self.full_anomaly_mask (same length as the placeholder value)\n    6) returns the single index of the lowest‐score window center which closes the loop on the sliding window idea"
-  },
-  {
-    "objectID": "posts/isolation_forest/index.html#student-todo-implement-your-anomaly-detector",
-    "href": "posts/isolation_forest/index.html#student-todo-implement-your-anomaly-detector",
-    "title": "Isolation Forest",
-    "section": "STUDENT TODO — Implement your anomaly detector",
-    "text": "STUDENT TODO — Implement your anomaly detector\nImplement Machine Learning/ Statistical models or both. Use the test_files (test series) to train your models and list of anomaly index range for example Anomaly 1: 2001-2005 Anomaly 2: 2010-2012\nConstraints\n\nKeep it efficient; we will run this over 10 datasets and additional novel datasets in class.\n\n#EDA on given model\n\n#Normalization\nscaler = StandardScaler()\n\n\n#Reshape\nrx = df['Value1'].values.reshape(-1,1)\n\nnp_scaled = scaler.fit_transform(rx)\ndata = pd.DataFrame(np_scaled)\n\n\ndata.head()\n\n\n\n\n\n\n\n\n0\n\n\n\n\n0\n-1.222425\n\n\n1\n-0.824437\n\n\n2\n-0.402862\n\n\n3\n-0.002453\n\n\n4\n0.093183\n\n\n\n\n\n\n\n\nfrom sklearn.preprocessing import StandardScaler\n\ndef detect_peaks_anomalies(x, min_height=None, distance=20):\n    \"\"\"Peak detection for spike anomalies - WITH StandardScaler\"\"\"\n    from scipy.signal import find_peaks\n\n    # Normalize using StandardScaler\n    scaler = StandardScaler()\n    x_normalized = scaler.fit_transform(x.reshape(-1, 1)).flatten()\n\n    if min_height is None:\n        min_height = 3.0  # Now in standard deviation units\n\n    peaks, _ = find_peaks(x_normalized, height=min_height, distance=distance)\n    neg_peaks, _ = find_peaks(-x_normalized, height=min_height, distance=distance)\n\n    return list(peaks) + list(neg_peaks)\n\ndef detect_change_point_anomalies(x, window_size=50):\n    \"\"\"Detect anomalies based on distribution changes - WITH StandardScaler\"\"\"\n    anomalies = []\n\n    # Normalize using StandardScaler\n    scaler = StandardScaler()\n    x_normalized = scaler.fit_transform(x.reshape(-1, 1)).flatten()\n\n    for i in range(window_size, len(x_normalized) - window_size):\n        before_window = x_normalized[i-window_size:i]\n        after_window = x_normalized[i:i+window_size]\n\n        # Statistical test on standardized data\n        mean_diff = np.abs(np.mean(after_window) - np.mean(before_window))\n        std_before = np.std(before_window)\n\n        # Threshold in standard deviation units\n        if std_before &gt; 0 and mean_diff &gt; 3.0:  # 2 standard deviations\n            anomalies.append(i)\n\n    return anomalies\n\n\n# Implement your anomaly detector/ detectors. You can edit this or use your own\nimport numpy as np\n\ndef student_detect_anomalies(series: np.ndarray) -&gt; list:\n    \"\"\"\n    Input:\n        series: 1D array-like of floats (test series)\n    Output:\n        List of (start, end) index pairs (0-based, end exclusive) for anomaly ranges.\n    \"\"\"\n    x = np.asarray(series, dtype=float)\n    n = len(x)\n    if n == 0:\n        return []\n\n    # Rolling mean/std z-score on a smoothed series\n    # Smooth to get residuals\n    w_smooth = 51\n    k = np.ones(w_smooth) / w_smooth\n    smooth = np.convolve(x, k, mode='same')\n    resid = x - smooth\n\n    # 2) Rolling mean/std using convolution (no extra libs)\n    w = 61  # odd; students may tune\n    kw = np.ones(w) / w\n    mu = np.convolve(resid, kw, mode='same')\n    mu2 = np.convolve(resid*resid, kw, mode='same')\n    var = np.maximum(mu2 - mu*mu, 1e-8)\n    sigma = np.sqrt(var)\n    z = np.abs((resid - mu) / (sigma + 1e-8))\n\n\n\nprint('anomalies identified.')\n\nanomalies identified."
-  },
-  {
-    "objectID": "posts/provided_model/index.html",
-    "href": "posts/provided_model/index.html",
-    "title": "Provided Model Tuning",
+    "objectID": "posts/ReadME/index.html#workflow",
+    "href": "posts/ReadME/index.html#workflow",
+    "title": "ReadMe",
     "section": "",
-    "text": "import pandas as pd\nimport os\nimport random\nimport numpy as np\nimport matplotlib.pyplot as plt\n\ntrain_file_names = os.listdir(\"train/\")\ntrain_file_names.sort()\n\ntrain_files = []\nfor file in train_file_names:\n    train_files.append(pd.read_csv(f\"train/{file}\", sep=\";\"))\n\ntest_file_names = os.listdir(\"test/\")\ntest_file_names.sort()\n\ntest_files = []\nfor file in test_file_names:\n    test_files.append(pd.read_csv(f\"test/{file}\", sep=\";\"))\n\ntest_files[0].head()\n\n\n\n\n\n\n\n\nValue1\nLabels\n\n\n\n\n0\n20.801402\n0\n\n\n1\n26.800208\n0\n\n\n2\n33.154527\n0\n\n\n3\n39.189824\n0\n\n\n4\n40.631321\n0"
+    "text": "Model development and EDA was done in separate notebooks which consists of:\n\nZ-score classifier\nIsolation Forest classifier\nProvided Model\n\nA benchmarking class was created to evaluate model performance on the 10 test files for the z-score model."
   },
   {
-    "objectID": "posts/provided_model/index.html#student-eda",
-    "href": "posts/provided_model/index.html#student-eda",
-    "title": "Provided Model Tuning",
-    "section": "Student EDA",
-    "text": "Student EDA\nUse this cell to explore the signal (e.g., plot, summary stats).\n\n# STUDENT EDA\ntry:\n    df = test_files[0]\n    print(df.head())\nexcept Exception as e:\n    print('EDA note: run the original data-loading cells first (the ones that populate train_files/test_files).')\n    df.info()\n    df.describe()\n\n    df.plot(x='time')\n\n      Value1  Labels\n0  20.801402       0\n1  26.800208       0\n2  33.154527       0\n3  39.189824       0\n4  40.631321       0"
-  },
-  {
-    "objectID": "posts/provided_model/index.html#explanation",
-    "href": "posts/provided_model/index.html#explanation",
-    "title": "Provided Model Tuning",
-    "section": "Explanation",
-    "text": "Explanation\nThis pipeline works on the idea that:\n    1) it builds upon sliding windows\n    2) gathers normalised anomaly scores from each sub-model and uses them\n    3) averages the anomaly scores\n    4) computes a binary mask by thresholding at the 1st percentile so that it can compare outputs\n    5) stores self.full_anomaly_mask (same length as the placeholder value)\n    6) returns the single index of the lowest‐score window center which closes the loop on the sliding window idea"
-  },
-  {
-    "objectID": "posts/provided_model/index.html#student-todo-implement-your-anomaly-detector",
-    "href": "posts/provided_model/index.html#student-todo-implement-your-anomaly-detector",
-    "title": "Provided Model Tuning",
-    "section": "STUDENT TODO — Implement your anomaly detector",
-    "text": "STUDENT TODO — Implement your anomaly detector\nImplement Machine Learning/ Statistical models or both. Use the test_files (test series) to train your models and list of anomaly index range for example Anomaly 1: 2001-2005 Anomaly 2: 2010-2012\nConstraints\n\nKeep it efficient; we will run this over 10 datasets and additional novel datasets in class."
+    "objectID": "posts/ReadME/index.html#breakdown-of-each-model",
+    "href": "posts/ReadME/index.html#breakdown-of-each-model",
+    "title": "ReadMe",
+    "section": "Breakdown of each model",
+    "text": "Breakdown of each model\n\nZ-score classifier\n\nPreprocessing\nIncluded using scipy.signal.detrend to remove seasonality from data and to make it stationery.\nIf not included, certain of the classifier’s decision metrics would flag the start and ends of certain data files as anomalous due to seasonality.\nThis step will also become necessary if the unseen data also has some seasonality which would decrease the precision of the model.\n\n\nModel Development\nThe classifier was made to be compatible around the scikit-learn API such other functionalities of sklearn can wrap around it.\nThis requires the model to inherit from BaseEstimator and ClassifierMixin, the fit method must return self and there must be a score function which predicts within the function.\nThis allows wrappers like GridSearchCV, LearningCurveDisplay and RocCurveDisplay to be used on the model which avoids having to reinvent the wheel.\nThe model’s classification is a consensus of multiple statistical metrics:\n\nZ-score (normal z-score which depends on train data metrics)\nIQR\nMean Absolute Deviation\nRolling Z-Score (Provided functions in the notebook deliverable)\n\n\n\n\n\n\n\nImportant\n\n\n\nThe Rolling Z-Score does not use the train data metrics. It relies on a convolution of the data with a smoothing factor which is used to compute the residuals of that data.\nThe residuals of the training data will be different to the testing data residuals meaning the \\(\\mu\\) and \\(\\mu^2\\) will be dependent on the underlying input data\n\n\nThe default scoring function is recall.\nThe model was hyperparameter tuned for both recall and balanced accuracy.\n\n\n\n\nProvided Model\nThe provided model was altered to inherit from BaseEstimator and ClassifierMixin classes in order to tune it as is with the sklearn API.\nModel performance was suboptimal with 92% accuracy, good precision of around 98% but recall suffers at 10%.\nThe model is computationally expensive with the window_size parameter scales exponentially as window size is increased while contamination changes the execution time minimally.\nThe recall did not improve drastically from tuning as the model has high bias which is seen in the learning curve.\nUsing this model for anomaly detection is not recommended due to it being very slow and not performing well enough to justify it being more computationally expensive."
   }
 ]

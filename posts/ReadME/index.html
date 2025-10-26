@@ -221,34 +221,13 @@ Important
 <hr>
 </section>
 </section>
-<section id="isolation-forest" class="level3">
-<h3 class="anchored" data-anchor-id="isolation-forest">Isolation Forest</h3>
-<section id="preprocessing-1" class="level4">
-<h4 class="anchored" data-anchor-id="preprocessing-1">Preprocessing</h4>
-<p>The model does internal feature engineering and preprocessing by gnerating rolling window features used for smoothing.</p>
-<p>Includes a hyperparameter called <code>target_anomalies</code></p>
-<div class="callout callout-style-default callout-warning callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-Warning
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>The <code>target_anomalies</code> parameter is based of that the training data anomalies are known but the testing set anomalies are not.</p>
-<p>If used, the training dataset anomalies can be set but it is based on the assumption that the testing data won’t know the true number of anomalies thus the test set has to be passed to the model after the data was trained.</p>
-<p>Its also possible that the test data will have far more or far less anomalies than the training data. If this is the case the model will perform worse as the contamination factor is not aligned properly but this is the trade-off to avoid data leakage.</p>
-</div>
-</div>
-<p>After determining the optimal contamination parameters and creating rolling windows, an IsolationForest model is fit to the data and the number of anomaly ranges are returned internally as well.</p>
-</section>
-</section>
 <section id="provided-model" class="level3">
 <h3 class="anchored" data-anchor-id="provided-model">Provided Model</h3>
-<p>The provided model was altered in testing notebooks for testing purposes but the best results will be passed to the unaltered model in the deliverable notebook.</p>
-<p>The model was also made to wrap around the scikit-learn API like the Z-Score classifier such that hyperparameter tuning can be done on it.</p>
+<p>The provided model was altered to inherit from <code>BaseEstimator</code> and <code>ClassifierMixin</code> classes in order to tune it as is with the sklearn API.</p>
+<p>Model performance was suboptimal with 92% accuracy, good precision of around 98% but recall suffers at 10%.</p>
+<p>The model is computationally expensive with the <code>window_size</code> parameter scales exponentially as window size is increased while <code>contamination</code> changes the execution time minimally.</p>
+<p>The recall did not improve drastically from tuning as the model has high bias which is seen in the learning curve.</p>
+<p>Using this model for anomaly detection is not recommended due to it being very slow and not performing well enough to justify it being more computationally expensive.</p>
 
 
 </section>
